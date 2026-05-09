@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum ConsultationStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  passwordHash    String
+  firstName       String
+  lastName        String?
+  phone           String?
+  role            Role             @default(PATIENT)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  patientProfile  PatientProfile?
+  doctorProfile   DoctorProfile?
+  sentMessages    Message[]        @relation("SentMessages")
+  notifications   Notification[]
+  aiConversation  AiConversation?
+}
+
+model PatientProfile {
+  id            String         @id @default(cuid())
+  userId        String         @unique
+  dateOfBirth   DateTime?
+  gender        String?
+  registerNo    String?
+  bloodType     String?
+  maritalStatus String?
+  heightCm      Float?
+  weightKg      Float?
+  bmi           Float?
+  city          String?
+  district      String?
+  khoroo        String?
+  addressDetail String?
+  emergencyRelation String?
+  emergencyName String?
+  emergencyPhone String?
+  hasAllergy    Boolean?
+  allergyNote   String?
+  hasChronicDisease Boolean?
+  chronicDiseaseNote String?
+  hasRegularMedicine Boolean?
+  regularMedicineNote String?
+  hasInjury     Boolean?
+  injuryNote    String?
+  hasSurgery    Boolean?
+  surgeryNote   String?
+  smoking       String?
+  alcohol       String?
+  movement      String?
+  food          String?
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  consultations Consultation[]
+  labResults    LabResult[]
+  chatRooms     ChatRoom[]
+  videoCalls    VideoCall[]
+}
+
+model DoctorProfile {
+  id            String         @id @default(cuid())
+  userId        String         @unique
+  hospitalId    String?
+  specialty     String
+  bio           String?
+  experience    Int            @default(0)
+  fee           Int            @default(0)
+  rating        Float          @default(0)
+  online        Boolean        @default(false)
+  verified      Boolean        @default(false)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospital      Hospital?      @relation(fields: [hospitalId], references: [id])
+  departments   Department[]   @relation("DepartmentDoctors")
+  appointments  Appointment[]
+  consultations Consultation[]
+  chatRooms     ChatRoom[]
+  videoCalls    VideoCall[]
+}
+
+model Hospital {
+  id          String          @id @default(cuid())
+  name        String
+  type        String
+  description String?
+  phone       String?
+  address     String
+  district    String
+  latitude    Float
+  longitude   Float
+  rating      Float           @default(0)
+  createdAt   DateTime        @default(now())
+  departments Department[]
+  doctors     DoctorProfile[]
+  appointments Appointment[]
+}
+
+model Department {
+  id          String          @id @default(cuid())
+  hospitalId  String
+  name        String
+  description String?
+  hospital    Hospital        @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  doctors     DoctorProfile[] @relation("DepartmentDoctors")
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  patientId   String
+  doctorId    String
+  hospitalId  String?
+  scheduledAt DateTime
+  reason      String
+  status      AppointmentStatus @default(PENDING)
+  createdAt   DateTime          @default(now())
+  patient     PatientProfile    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      DoctorProfile     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  hospital    Hospital?         @relation(fields: [hospitalId], references: [id])
+  videoCall   VideoCall?
+}
+
+model Consultation {
+  id          String             @id @default(cuid())
+  patientId   String
+  doctorId    String?
+  symptoms    String
+  notes       String?
+  status      ConsultationStatus @default(OPEN)
+  createdAt   DateTime           @default(now())
+  patient     PatientProfile     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      DoctorProfile?     @relation(fields: [doctorId], references: [id])
+}
+
+model LabResult {
+  id          String         @id @default(cuid())
+  patientId   String
+  code        String         @unique
+  title       String
+  resultJson  Json
+  summary     String?
+  issuedAt    DateTime       @default(now())
+  patient     PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model ChatRoom {
+  id          String         @id @default(cuid())
+  patientId   String
+  doctorId    String
+  createdAt   DateTime       @default(now())
+  patient     PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      DoctorProfile  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  messages    Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  roomId    String
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+  room      ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  body      String?
+  type      String    @default("SYSTEM")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VideoCall {
+  id            String          @id @default(cuid())
+  appointmentId String?         @unique
+  patientId     String
+  doctorId      String
+  roomId        String          @unique
+  status        String          @default("REQUESTED")
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime        @default(now())
+  appointment   Appointment?    @relation(fields: [appointmentId], references: [id])
+  patient       PatientProfile  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor        DoctorProfile   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model AiConversation {
+  id        String      @id @default(cuid())
+  userId    String      @unique
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  toolName       String?
+  createdAt      DateTime       @default(now())
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}

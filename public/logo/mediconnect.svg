@@ -1,0 +1,6 @@
+<svg width="180" height="44" viewBox="0 0 180 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="44" height="44" rx="12" fill="#0EA5E9"/>
+  <path d="M22 10v24M10 22h24" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <text x="55" y="28" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0B1F3A">MediConnect</text>
+</svg>
+
