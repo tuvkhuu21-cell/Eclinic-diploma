@@ -99,7 +99,10 @@ model DoctorProfile {
   experience    Int            @default(0)
   fee           Int            @default(0)
   rating        Float          @default(0)
+  gender        String?
   online        Boolean        @default(false)
+  supportsOnline Boolean       @default(true)
+  supportsInPerson Boolean     @default(false)
   verified      Boolean        @default(false)
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   hospital      Hospital?      @relation(fields: [hospitalId], references: [id])
@@ -142,6 +145,10 @@ model Appointment {
   doctorId    String
   hospitalId  String?
   scheduledAt DateTime
+  durationMinutes Int          @default(30)
+  type        String            @default("ONLINE")
+  price       Int               @default(0)
+  paymentStatus String          @default("PENDING")
   reason      String
   status      AppointmentStatus @default(PENDING)
   createdAt   DateTime          @default(now())

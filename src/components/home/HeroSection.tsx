@@ -13,7 +13,7 @@ export function HeroSection() {
           <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-tight text-navy md:text-6xl">Эрүүл мэндийн үйлчилгээг гэрээсээ хурдан, найдвартай аваарай</h1>
           <p className="mt-5 max-w-2xl text-lg text-slate-600">MediConnect нь эмчийн цаг захиалга, онлайн зөвлөгөө, шинжилгээний хариу, AI туслах болон бодит цагийн харилцааг нэг дор нэгтгэнэ.</p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/appointments/new"><Button><CalendarCheck size={18} className="mr-2" />Цаг захиалах</Button></Link>
+            <Link href="/?appointment=select"><Button><CalendarCheck size={18} className="mr-2" />Цаг захиалах</Button></Link>
             <Link href="/consultation"><Button variant="secondary"><Sparkles size={18} className="mr-2" />Яг одоо зөвлөгөө авах</Button></Link>
           </div>
         </div>
@@ -24,4 +24,3 @@ export function HeroSection() {
     </section>
   );
 }
-
