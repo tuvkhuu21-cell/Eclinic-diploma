@@ -62,6 +62,10 @@ export function DoctorProfileModal({ doctor, onClose }: { doctor: Doctor | null;
     router.push(`/patient/home/appointment/timetable?service=${doctorId}`);
   }
 
+  function startInstantBooking() {
+    router.push(`/patient/home/consultation?specialty=${encodeURIComponent(specialty)}`);
+  }
+
   function startInPersonBooking() {
     const params = new URLSearchParams({
       doctorId,
@@ -91,9 +95,11 @@ export function DoctorProfileModal({ doctor, onClose }: { doctor: Doctor | null;
                 <span className="inline-flex items-center gap-1"><Star size={15} fill="currentColor" />{doctor.rating}</span>
                 <span>{count} зөвлөгөө</span>
                 <span>{formatCurrency(onlinePrice)}₮</span>
+                <span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${doctor.online ? "bg-emerald-300" : "bg-slate-300"}`} />{doctor.online ? "Active" : "Offline"}</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              {supportsOnline && doctor.online && <Button className="h-11 rounded-xl bg-white px-5 text-medical shadow-sm hover:bg-cyanSoft" onClick={startInstantBooking}>Яг одоо зөвлөгөө авах</Button>}
               {supportsOnline && <Button className="h-11 rounded-xl bg-[#073b5c] px-6 text-white shadow-sm hover:bg-[#0b5b86]" onClick={startOnlineBooking}><Video size={17} className="mr-2" />Онлайн</Button>}
               {supportsInPerson && <Button className="h-11 rounded-xl bg-cyanSoft px-6 text-medical shadow-sm hover:bg-white" onClick={startInPersonBooking}><Building2 size={17} className="mr-2" />Биечлэн</Button>}
             </div>

@@ -128,11 +128,13 @@ type PatientAppointment = {
   paymentStatus?: string;
   status?: string;
   doctor: {
+    id: string;
     specialty: string;
     hospital?: { name: string } | null;
     chatRooms?: Array<{ id: string }>;
     user: { firstName: string; lastName?: string };
   };
+  videoCall?: { roomId: string; status?: string } | null;
 };
 
 function MyDoctorsSection() {
@@ -187,9 +189,8 @@ function MyDoctorsSection() {
                   <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-400"><MessageCircle size={16} />Чат байхгүй</span>
                 ) : null}
                 {!isHospitalVisit && (
-                  <button type="button" className="inline-flex items-center gap-2 rounded-full border border-sky-100 px-4 py-2 text-sm font-bold text-medical transition hover:bg-cyanSoft" onClick={() => window.alert("Видео дуудлага удахгүй нэмэгдэнэ")}>
-                    <Video size={16} />
-                    Видео дуудлага
+                  <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-10 w-10 place-items-center rounded-full border border-sky-100 text-medical transition hover:bg-cyanSoft" onClick={() => openPatientVideoCall(appointment)}>
+                    <Video size={17} />
                   </button>
                 )}
               </div>
@@ -329,6 +330,23 @@ function EmptyState({ text }: { text: string }) {
 
 function isPaidAppointment(appointment: PatientAppointment) {
   return appointment.paymentStatus === "PAID" || appointment.status === "CONFIRMED" || appointment.status === "COMPLETED";
+}
+
+async function openPatientVideoCall(appointment: PatientAppointment) {
+  if (appointment.videoCall?.roomId && appointment.videoCall.status !== "ended" && appointment.videoCall.status !== "declined") {
+    await api.patch("/video-calls", { roomId: appointment.videoCall.roomId, status: "ringing" }).catch(() => null);
+    window.location.href = `/video-call/${appointment.videoCall.roomId}?start=1`;
+    return;
+  }
+  try {
+    const response = await api.post("/video-calls", { doctorId: appointment.doctor.id, appointmentId: appointment.id });
+    const roomId = response.data.data.roomId as string;
+    console.log("video-call: patient dashboard open", { roomId, appointmentId: appointment.id, doctorId: appointment.doctor.id });
+    await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+    window.location.href = `/video-call/${roomId}?start=1`;
+  } catch {
+    window.alert("Видео өрөө үүсгэхэд алдаа гарлаа.");
+  }
 }
 
 function formatDoctorName(appointment: PatientAppointment) {

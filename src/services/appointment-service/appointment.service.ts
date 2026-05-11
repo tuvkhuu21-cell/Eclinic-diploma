@@ -15,9 +15,10 @@ export const appointmentService = {
       ORDER BY "scheduledAt" ASC
     `;
     const appointments = await Promise.all(rows.map(async (appointment) => {
-      const [doctor, chatRoom] = await Promise.all([
+      const [doctor, chatRoom, videoCall] = await Promise.all([
         prisma.doctorProfile.findUnique({ where: { id: appointment.doctorId }, include: { user: true, hospital: true } }),
         prisma.chatRoom.findFirst({ where: { patientId: patient.id, doctorId: appointment.doctorId }, select: { id: true } }),
+        prisma.videoCall.findUnique({ where: { appointmentId: appointment.id }, select: { roomId: true, status: true } }).catch(() => null),
       ]);
       if (!doctor) return null;
       const appointmentType = appointment.reason?.includes("Багц шинжилгээ")
@@ -36,12 +37,13 @@ export const appointmentService = {
         packageName: extractPackageName(appointment.reason),
         labName: extractPackageLabName(appointment.reason),
         doctor: { ...doctor, chatRooms: chatRoom ? [chatRoom] : [] },
+        videoCall,
         hospital: doctor?.hospital || null,
       };
     }));
     return appointments.filter(Boolean);
   },
-  doctor: (userId: string) => prisma.appointment.findMany({ where: { doctor: { userId } }, include: { patient: { include: { user: true, chatRooms: { where: { doctor: { userId } }, select: { id: true } } } }, hospital: true }, orderBy: { scheduledAt: "asc" } }),
+  doctor: (userId: string) => prisma.appointment.findMany({ where: { doctor: { userId } }, include: { patient: { include: { user: true, chatRooms: { where: { doctor: { userId } }, select: { id: true } } } }, hospital: true, videoCall: true }, orderBy: { scheduledAt: "asc" } }),
   async create(userId: string, data: { doctorId: string; hospitalId?: string; scheduledAt: string; reason: string; durationMinutes?: number; type?: string; price?: number; paymentStatus?: string }) {
     const patient = await prisma.patientProfile.findUnique({ where: { userId } });
     if (!patient) throw new ApiError(403, "Patient profile required");

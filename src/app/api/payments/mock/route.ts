@@ -123,9 +123,20 @@ export async function POST(request: NextRequest) {
         data: { patientId: patient.id, doctorId: doctor.id },
         select: { id: true },
       });
+      const videoCall = isHospitalVisit || isPackageOrder ? null : await tx.videoCall.upsert({
+        where: { appointmentId: appointmentId },
+        update: { status: "waiting" },
+        create: {
+          appointmentId,
+          patientId: patient.id,
+          doctorId: doctor.id,
+          roomId: `video-${appointmentId}`,
+          status: "waiting",
+        },
+      });
 
       return {
-        appointment: { ...appointment, chatRoom },
+        appointment: { ...appointment, chatRoom, videoCall },
         notifications: { patient: patientNotification, doctor: doctorNotification },
       };
     });

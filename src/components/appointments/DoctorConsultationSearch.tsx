@@ -83,6 +83,10 @@ export function DoctorConsultationSearch() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-bold text-navy">{doctorName}</h2>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${doctor.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                      <span className={`h-2 w-2 rounded-full ${doctor.online ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      {doctor.online ? "Active" : "Offline"}
+                    </span>
                     {doctor.verified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={13} /> Verified</span>}
                   </div>
                   <p className="mt-1 text-sm font-semibold text-medical">{doctor.specialty}</p>

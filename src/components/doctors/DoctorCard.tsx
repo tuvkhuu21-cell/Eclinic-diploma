@@ -48,7 +48,7 @@ export function DoctorCard({ doctor }: { doctor: Doctor }) {
               </div>
               <p className="text-sm text-slate-600">{doctor.specialty}</p>
             </div>
-            <Badge className={doctor.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}>{doctor.online ? "Онлайн" : "Офлайн"}</Badge>
+            <Badge className={doctor.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}><span className={`mr-2 inline-block h-2 w-2 rounded-full ${doctor.online ? "bg-emerald-500" : "bg-slate-400"}`} />{doctor.online ? "Active" : "Offline"}</Badge>
           </div>
           <p className="mt-2 text-sm text-slate-500">{doctor.hospital?.name || "Эмнэлэг сонгоогүй"} · {doctor.experience} жил</p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
