@@ -1,0 +1,45 @@
+import { createClient } from "@supabase/supabase-js";
+
+let missingEnvLogged = false;
+const missingEnvMessage = "Supabase environment variables are missing";
+
+function getServerSupabaseEnv() {
+  return {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  };
+}
+
+function logMissingSupabaseEnv() {
+  if (missingEnvLogged) return;
+  missingEnvLogged = true;
+  if (process.env.NODE_ENV !== "production") console.warn(missingEnvMessage);
+}
+
+export function isSupabaseRealtimeServerEnabled() {
+  const { url, serviceKey } = getServerSupabaseEnv();
+  return Boolean(url && serviceKey);
+}
+
+export async function broadcastRealtimeServer(channelName: string, event: string, payload: unknown) {
+  const { url, serviceKey } = getServerSupabaseEnv();
+  if (!url || !serviceKey) {
+    logMissingSupabaseEnv();
+    return;
+  }
+  const client = createClient(
+    url,
+    serviceKey,
+    { auth: { persistSession: false }, realtime: { params: { eventsPerSecond: 20 } } },
+  );
+  const channel = client.channel(channelName, { config: { broadcast: { self: false } } });
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 800);
+    void channel.subscribe((status) => {
+      if (status !== "SUBSCRIBED") return;
+      clearTimeout(timeout);
+      void channel.send({ type: "broadcast", event, payload }).finally(resolve);
+    });
+  });
+  await client.removeChannel(channel);
+}

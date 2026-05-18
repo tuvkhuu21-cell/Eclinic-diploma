@@ -6,6 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { FloatingAssistant } from "@/components/ai/FloatingAssistant";
 import { AuthHydrator } from "@/components/auth/AuthHydrator";
+import { GlobalIncomingCallListener } from "@/components/video/GlobalIncomingCallListener";
 
 export const metadata: Metadata = {
   title: "MediConnect - Онлайн эмнэлгийн платформ",
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="min-h-screen">{children}</main>
         <Footer />
         <FloatingAssistant />
+        <GlobalIncomingCallListener />
         <MobileNav />
       </body>
     </html>

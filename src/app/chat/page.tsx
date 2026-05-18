@@ -1,5 +1,5 @@
 import { ChatBox } from "@/components/chat/ChatBox";
 
 export default function ChatPage() {
-  return <section className="mx-auto max-w-7xl px-4 py-10"><ChatBox /></section>;
+  return <section className="bg-slate-100 px-3 py-4 md:px-5"><ChatBox /></section>;
 }

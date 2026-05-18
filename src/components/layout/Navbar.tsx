@@ -22,6 +22,7 @@ export function Navbar() {
   const activeRole = user?.role || role;
   const isLoggedIn = Boolean(token && activeRole);
   const isPatient = activeRole === "PATIENT";
+  const homeHref = activeRole === "DOCTOR" ? "/dashboard/doctor" : activeRole === "ADMIN" ? "/dashboard/admin" : "/";
   const shouldHidePatientHomeHeader = hasHydrated && pathname === "/" && isLoggedIn && isPatient;
   const shouldHideDoctorAuthHeader = pathname === "/doctor/login" || pathname === "/doctor/register";
 
@@ -36,8 +37,6 @@ export function Navbar() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
-
-  if (!hasHydrated) return null;
 
   if (shouldHidePatientHomeHeader || shouldHideDoctorAuthHeader) return null;
 
@@ -120,13 +119,13 @@ export function Navbar() {
           </div>
         )}
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-4">
-          <Link href="/" className="flex shrink-0 items-center gap-3">
+          <Link href={hasHydrated && isLoggedIn ? homeHref : "/"} className="flex shrink-0 items-center gap-3">
             <Image src="/logo/mediconnect.svg" alt="MediConnect" width={180} height={44} priority />
           </Link>
           <nav className="hidden flex-1 items-center justify-center gap-7 text-sm font-semibold text-slate-700 lg:flex">
             {hasHydrated && isLoggedIn ? (
               <>
-                <Link href="/" className="hover:text-medical">Нүүр</Link>
+                <Link href={homeHref} className="hover:text-medical">Нүүр</Link>
                 <Link href="/appointments" className="hover:text-medical">Захиалга</Link>
               </>
             ) : (

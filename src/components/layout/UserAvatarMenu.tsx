@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { HeartPulse, History, LogOut, Settings } from "lucide-react";
+import { CalendarClock, HeartPulse, History, LayoutDashboard, LogOut, MessageCircle, Settings, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AuthRole, AuthUser, useAuthStore } from "@/store/auth.store";
+import { api } from "@/services/api";
 
 const roleLabel: Record<AuthRole, string> = {
   PATIENT: "Үйлчлүүлэгчийн профайл",
@@ -13,11 +14,24 @@ const roleLabel: Record<AuthRole, string> = {
   ADMIN: "Админ профайл",
 };
 
-const menuItems = [
-  { label: "Эрүүл мэндийн түүх", href: "/dashboard/patient", icon: HeartPulse },
-  { label: "Захиалгын түүх", href: "/appointments", icon: History },
-  { label: "Тохиргоо", href: "/patient/home/settings", icon: Settings },
-];
+const menuItemsByRole: Record<AuthRole, Array<{ label: string; href: string; icon: typeof HeartPulse }>> = {
+  PATIENT: [
+    { label: "Эрүүл мэндийн түүх", href: "/dashboard/patient", icon: HeartPulse },
+    { label: "Захиалгын түүх", href: "/dashboard/patient?section=orders", icon: History },
+    { label: "Тохиргоо", href: "/patient/home/settings", icon: Settings },
+  ],
+  DOCTOR: [
+    { label: "Хянах самбар", href: "/dashboard/doctor", icon: LayoutDashboard },
+    { label: "Хувийн мэдээлэл", href: "/dashboard/doctor?section=profile", icon: UserRound },
+    { label: "Цаг захиалгууд", href: "/dashboard/doctor?section=appointments", icon: CalendarClock },
+    { label: "Чат", href: "/dashboard/doctor?section=chat", icon: MessageCircle },
+    { label: "Тохиргоо", href: "/dashboard/doctor?section=settings", icon: Settings },
+  ],
+  ADMIN: [
+    { label: "Хянах самбар", href: "/dashboard/admin", icon: LayoutDashboard },
+    { label: "Тохиргоо", href: "/dashboard/admin", icon: Settings },
+  ],
+};
 
 export function UserAvatarMenu({ user, role, buttonClassName }: { user?: AuthUser; role?: AuthRole; buttonClassName?: string }) {
   const router = useRouter();
@@ -25,6 +39,8 @@ export function UserAvatarMenu({ user, role, buttonClassName }: { user?: AuthUse
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRole = user?.role || role || "PATIENT";
+  const profileHref = activeRole === "DOCTOR" ? "/dashboard/doctor?section=profile" : activeRole === "ADMIN" ? "/dashboard/admin" : "/dashboard/patient?section=profile";
+  const menuItems = menuItemsByRole[activeRole];
   const initials = `${user?.lastName?.[0] || ""}${user?.firstName?.[0] || "Х"}`;
   const fullName = `${user?.lastName || ""} ${user?.firstName || "Хэрэглэгч"}`.trim();
 
@@ -36,8 +52,9 @@ export function UserAvatarMenu({ user, role, buttonClassName }: { user?: AuthUse
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function handleLogout() {
+  async function handleLogout() {
     setOpen(false);
+    if (activeRole === "DOCTOR") await api.patch("/doctors/me", { online: false }).catch(() => null);
     logout();
     router.replace("/");
     router.refresh();
@@ -55,7 +72,7 @@ export function UserAvatarMenu({ user, role, buttonClassName }: { user?: AuthUse
       </button>
       {open && (
         <div className="absolute right-0 top-[calc(100%+12px)] z-[130] w-[min(330px,calc(100vw-1.5rem))] overflow-hidden rounded-3xl border border-sky-100 bg-white shadow-[0_24px_70px_rgba(14,165,233,0.24)] ring-1 ring-white">
-          <Link href="/dashboard/patient?section=profile" onClick={() => setOpen(false)} className="flex items-center gap-3 border-b border-sky-100 bg-gradient-to-br from-cyanSoft to-white px-4 py-4 text-left transition hover:from-sky-50 hover:to-cyanSoft">
+          <Link href={profileHref} onClick={() => setOpen(false)} className="flex items-center gap-3 border-b border-sky-100 bg-gradient-to-br from-cyanSoft to-white px-4 py-4 text-left transition hover:from-sky-50 hover:to-cyanSoft">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-medical font-extrabold text-white shadow-sm">{initials}</div>
             <div className="min-w-0">
               <p className="truncate font-bold text-navy">{fullName}</p>

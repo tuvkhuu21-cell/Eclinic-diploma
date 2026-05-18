@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { authService } from "@/services/auth.service";
+import { api } from "@/services/api";
 import { AuthRole, AuthUser, useAuthStore } from "@/store/auth.store";
 
 type AlertState = { type: "success" | "error"; text: string };
@@ -54,6 +55,7 @@ export default function LoginPage() {
       const response = await authService.login({ email: email.trim(), password });
       const { token, user } = getAuthPayload(response.data);
       setAuth(token, user);
+      if (user.role === "DOCTOR") await api.patch("/doctors/me", { online: true }).catch(() => null);
       setAlert({ type: "success", text: "Амжилттай нэвтэрлээ" });
       window.setTimeout(() => {
         router.replace(dashboardByRole[user.role]);

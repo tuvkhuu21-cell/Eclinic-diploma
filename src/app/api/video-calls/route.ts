@@ -9,6 +9,17 @@ import { videoService } from "@/services/video-call-service/video.service";
 export const runtime = "nodejs";
 export const OPTIONS = options;
 
+export async function GET(request: NextRequest) {
+  try {
+    const user = getAuthUser(request);
+    const status = request.nextUrl.searchParams.get("status");
+    if (status === "ringing") return ok(await videoService.incoming(user.userId));
+    return ok([]);
+  } catch (error) {
+    return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = getAuthUser(request);

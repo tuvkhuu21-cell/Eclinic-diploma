@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { NotificationItem } from "./NotificationItem";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
+import { removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type NotificationRow = {
   id: string;
@@ -46,12 +47,14 @@ export function NotificationBox({ variant = "list", buttonClassName }: { variant
     }
 
     loadNotifications();
-    const timer = window.setInterval(loadNotifications, 10000);
+    const channel = user?.id ? subscribeBroadcast<NotificationRow>(`user-notifications-${user.id}`, "new-notification", (notification) => {
+      setNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)]);
+    }) : null;
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      removeRealtimeChannel(channel);
     };
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!open) return;

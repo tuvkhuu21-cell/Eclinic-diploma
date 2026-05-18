@@ -19,11 +19,9 @@ export function PatientHomeGate() {
     if (new URLSearchParams(window.location.search).get("appointment") === "select") setAppointmentOpen(true);
   }, []);
 
-  if (!hasHydrated) {
-    return <div className="min-h-[60vh] bg-[#eef7fb]" />;
-  }
+  const isPatientHome = hasHydrated && token && (role === "PATIENT" || user?.role === "PATIENT");
 
-  if (hasHydrated && token && (role === "PATIENT" || user?.role === "PATIENT")) return <PatientHome />;
+  if (isPatientHome) return <PatientHome />;
   return (
     <>
       <HeroSection />

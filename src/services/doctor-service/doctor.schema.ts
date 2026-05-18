@@ -23,13 +23,13 @@ export const doctorRegisterSchema = z.object({
 });
 
 export const doctorProfileUpdateSchema = z.object({
-  firstName: z.string().min(2),
-  lastName: z.string().min(1),
+  firstName: z.string().min(2).optional(),
+  lastName: z.string().min(1).optional(),
   phone: z.string().optional(),
-  specialty: z.string().min(1),
+  specialty: z.string().min(1).optional(),
   gender: genderSchema,
-  experience: z.coerce.number().int().min(0),
-  fee: z.coerce.number().int().min(0),
+  experience: z.coerce.number().int().min(0).optional(),
+  fee: z.coerce.number().int().min(0).optional(),
   hospital: z.string().optional(),
   bio: z.string().optional(),
   online: z.boolean().optional(),

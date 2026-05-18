@@ -8,6 +8,7 @@ import { AxiosError } from "axios";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { authService } from "@/services/auth.service";
+import { api } from "@/services/api";
 import { AuthUser, useAuthStore } from "@/store/auth.store";
 
 type AlertState = { type: "success" | "error"; text: string };
@@ -46,6 +47,7 @@ export default function DoctorLoginPage() {
         return;
       }
       setAuth(token, user);
+      await api.patch("/doctors/me", { online: true }).catch(() => null);
       setAlert({ type: "success", text: "Амжилттай нэвтэрлээ" });
       window.setTimeout(() => {
         router.replace("/dashboard/doctor");

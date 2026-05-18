@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { broadcastRealtimeServer } from "@/lib/supabase-realtime-server";
 
 export const chatService = {
   async rooms(userId: string) {
@@ -37,5 +38,24 @@ export const chatService = {
     }));
   },
   messages: (roomId: string) => prisma.message.findMany({ where: { roomId }, include: { sender: true }, orderBy: { createdAt: "asc" } }),
-  send: (userId: string, data: { roomId: string; content: string }) => prisma.message.create({ data: { roomId: data.roomId, senderId: userId, content: data.content } }),
+  async send(userId: string, data: { roomId: string; content: string }) {
+    const room = await prisma.chatRoom.findUnique({
+      where: { id: data.roomId },
+      include: { patient: true, doctor: true },
+    });
+    const message = await prisma.message.create({ data: { roomId: data.roomId, senderId: userId, content: data.content } });
+    const recipientUserId = room?.patient.userId === userId ? room.doctor.userId : room?.patient.userId;
+    if (recipientUserId) {
+      const notification = await prisma.notification.create({
+        data: {
+          userId: recipientUserId,
+          title: "Шинэ чат зурвас",
+          body: "Танд шинэ чат зурвас ирлээ.",
+          type: "CHAT",
+        },
+      });
+      await broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
+    }
+    return message;
+  },
 };

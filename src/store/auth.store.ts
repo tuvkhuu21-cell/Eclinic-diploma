@@ -40,17 +40,21 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ hasHydrated: true });
       return;
     }
-    const token = localStorage.getItem("mediconnect_token") || undefined;
-    const rawUser = localStorage.getItem("mediconnect_user");
-    let user: AuthUser | undefined;
-    if (rawUser) {
-      try {
-        user = JSON.parse(rawUser) as AuthUser;
-      } catch {
-        localStorage.removeItem("mediconnect_user");
+    try {
+      const token = localStorage.getItem("mediconnect_token") || undefined;
+      const rawUser = localStorage.getItem("mediconnect_user");
+      let user: AuthUser | undefined;
+      if (rawUser) {
+        try {
+          user = JSON.parse(rawUser) as AuthUser;
+        } catch {
+          localStorage.removeItem("mediconnect_user");
+        }
       }
+      set({ token, user, role: user?.role, hasHydrated: true });
+    } catch {
+      set({ token: undefined, user: undefined, role: undefined, hasHydrated: true });
     }
-    set({ token, user, role: user?.role, hasHydrated: true });
   },
   setAuth: (token, user) => {
     persistAuth(token, user);

@@ -1,19 +1,19 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, PhoneOff, Send, Video, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Edit3, MoreHorizontal, Paperclip, Search, Send, Smile, Video } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { MessageBubble } from "./MessageBubble";
 import { DoctorOnlineStatus } from "./DoctorOnlineStatus";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
+import { broadcastRealtime, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type ChatRoom = {
   id: string;
-  patient: { user: { firstName: string; lastName?: string } };
-  doctor: { id: string; user: { firstName: string; lastName?: string }; specialty: string; online?: boolean };
+  patient: { user: { id?: string; firstName: string; lastName?: string } };
+  doctor: { id: string; user: { id?: string; firstName: string; lastName?: string }; specialty: string; online?: boolean };
   appointment?: {
     id: string;
     type?: string;
@@ -27,18 +27,24 @@ type ChatMessage = {
   id: string;
   content: string;
   senderId: string;
+  createdAt?: string;
+  status?: "sending" | "failed";
 };
 
 export function ChatBox() {
-  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [activeRoomId, setActiveRoomId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [unreadRoomIds, setUnreadRoomIds] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const initialScrollDoneRef = useRef(false);
 
   useEffect(() => {
     let firstLoad = true;
@@ -49,9 +55,18 @@ export function ChatBox() {
         if (cancelled) return;
         const rows = response.data.data as ChatRoom[];
         setRooms(rows);
+        setUnreadRoomIds((current) => current.size ? current : new Set(rows.map((room) => room.id)));
         if (firstLoad) {
           const requestedRoom = new URLSearchParams(window.location.search).get("roomId");
-          setActiveRoomId(requestedRoom || rows[0]?.id || "");
+          const initialRoomId = requestedRoom || rows[0]?.id || "";
+          setActiveRoomId(initialRoomId);
+          if (initialRoomId) {
+            setUnreadRoomIds((current) => {
+              const next = new Set(current);
+              next.delete(initialRoomId);
+              return next;
+            });
+          }
           firstLoad = false;
         }
       } catch {
@@ -59,11 +74,19 @@ export function ChatBox() {
       }
     }
     loadRooms();
-    const timer = window.setInterval(loadRooms, 3000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
+  }, []);
+
+  const refreshMessages = useCallback(async (roomId: string, options?: { clearOnError?: boolean }) => {
+    try {
+      const response = await api.get(`/chat/rooms/${roomId}/messages`);
+      const rows = normalizeMessages(response.data.data as ChatMessage[]);
+      setMessages((current) => mergeMessages(current, rows));
+    } catch {
+      if (options?.clearOnError) setMessages([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -71,36 +94,93 @@ export function ChatBox() {
       setMessages([]);
       return;
     }
+    initialScrollDoneRef.current = false;
 
     let cancelled = false;
     async function loadMessages() {
       try {
         const response = await api.get(`/chat/rooms/${activeRoomId}/messages`);
-        if (!cancelled) setMessages(response.data.data as ChatMessage[]);
+        if (!cancelled) setMessages(normalizeMessages(response.data.data as ChatMessage[]));
       } catch {
         if (!cancelled) setMessages([]);
       }
     }
 
     loadMessages();
-    const timer = window.setInterval(loadMessages, 5000);
+    const channel = subscribeBroadcast<ChatMessage>(`chat-room-${activeRoomId}`, "new-message", (message) => {
+      setMessages((current) => mergeMessages(current, [message]));
+      if (message.senderId !== user?.id) {
+        setUnreadRoomIds((current) => {
+          const next = new Set(current);
+          next.add(activeRoomId);
+          return next;
+        });
+      }
+    });
+    const timer = window.setInterval(() => {
+      void refreshMessages(activeRoomId);
+    }, 2500);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      removeRealtimeChannel(channel);
     };
-  }, [activeRoomId]);
+  }, [activeRoomId, refreshMessages]);
+
+  useEffect(() => {
+    const element = messagesRef.current;
+    if (!element) return;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (!initialScrollDoneRef.current || distanceFromBottom < 180) {
+      element.scrollTop = element.scrollHeight;
+      initialScrollDoneRef.current = true;
+    }
+  }, [messages]);
 
   const activeRoom = useMemo(() => rooms.find((room) => room.id === activeRoomId), [activeRoomId, rooms]);
   const activeOnlineAppointment = activeRoom?.appointment?.type === "ONLINE" || (activeRoom?.appointment && !activeRoom.appointment.type);
+  const activeTitle = activeRoom ? (user?.role === "DOCTOR" ? `${activeRoom.patient.user.lastName || ""} ${activeRoom.patient.user.firstName}`.trim() : `${activeRoom.doctor.user.lastName || ""} ${activeRoom.doctor.user.firstName}`.trim()) : "Чат сонгоно уу";
+  const activeInitials = getInitials(activeTitle);
+  const visibleRooms = useMemo(() => rooms.filter((room) => {
+    const doctorName = `${room.doctor.user.lastName || ""} ${room.doctor.user.firstName}`.trim();
+    const patientName = `${room.patient.user.lastName || ""} ${room.patient.user.firstName}`.trim();
+    const title = user?.role === "DOCTOR" ? patientName : doctorName;
+    const matchesSearch = title.toLowerCase().includes(searchTerm.trim().toLowerCase()) || room.doctor.specialty.toLowerCase().includes(searchTerm.trim().toLowerCase());
+    const matchesFilter = filter === "all" || unreadRoomIds.has(room.id);
+    return matchesSearch && matchesFilter;
+  }), [filter, rooms, searchTerm, unreadRoomIds, user?.role]);
+
+  function selectRoom(roomId: string) {
+    setActiveRoomId(roomId);
+    setUnreadRoomIds((current) => {
+      const next = new Set(current);
+      next.delete(roomId);
+      return next;
+    });
+  }
 
   async function sendMessage() {
     const content = draft.trim();
     if (!activeRoomId || !content || sending) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      content,
+      senderId: user?.id || "me",
+      createdAt: new Date().toISOString(),
+      status: "sending",
+    };
+    setMessages((current) => mergeMessages(current, [optimisticMessage]));
+    setDraft("");
     setSending(true);
     try {
       const response = await api.post("/chat/messages", { roomId: activeRoomId, content });
-      setMessages((current) => [...current, response.data.data as ChatMessage]);
-      setDraft("");
+      const saved = response.data.data as ChatMessage;
+      setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
+      await broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      void refreshMessages(activeRoomId);
+    } catch {
+      setMessages((current) => current.map((message) => message.id === tempId ? { ...message, status: "failed" } : message));
     } finally {
       setSending(false);
     }
@@ -117,117 +197,145 @@ export function ChatBox() {
       const uploadResponse = await api.post("/chat/upload", data, { headers: { "Content-Type": "multipart/form-data" } });
       const attachment = uploadResponse.data.data as { url: string; name: string; mimeType: string; size: number };
       const payload = JSON.stringify({ text: draft.trim(), attachment });
+      const tempId = `temp-${Date.now()}`;
+      setMessages((current) => mergeMessages(current, [{
+        id: tempId,
+        content: payload,
+        senderId: user?.id || "me",
+        createdAt: new Date().toISOString(),
+        status: "sending",
+      }]));
       const response = await api.post("/chat/messages", { roomId: activeRoomId, content: payload });
-      setMessages((current) => [...current, response.data.data as ChatMessage]);
+      const saved = response.data.data as ChatMessage;
+      setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
       setDraft("");
+      await broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      void refreshMessages(activeRoomId);
+    } catch {
+      setMessages((current) => current.map((message) => message.status === "sending" ? { ...message, status: "failed" } : message));
     } finally {
       setUploading(false);
     }
   }
 
-  async function openVideoCall() {
+  async function startVideoCall() {
     if (!activeRoom?.appointment) return;
-    const existingRoomId = activeRoom.appointment.videoCall?.roomId;
-    const existingStatus = activeRoom.appointment.videoCall?.status;
-    if (existingRoomId && existingStatus !== "ended" && existingStatus !== "declined") {
-      await api.patch("/video-calls", { roomId: existingRoomId, status: "ringing" }).catch(() => null);
-      router.push(`/video-call/${existingRoomId}?start=1`);
-      return;
+    const response = await api.post("/video-calls", {
+      doctorId: activeRoom.doctor.id,
+      appointmentId: activeRoom.appointment.id,
+    });
+    const roomId = response.data.data.roomId as string;
+    const recipientUserId = user?.role === "DOCTOR" ? activeRoom.patient.user.id : activeRoom.doctor.user.id;
+    if (recipientUserId) {
+      await broadcastRealtime(`user-notifications-${recipientUserId}`, "incoming-video-call", {
+        roomId,
+        appointmentId: activeRoom.appointment.id,
+        callerId: user?.id,
+        callerName: user?.role === "DOCTOR"
+          ? `${activeRoom.doctor.user.lastName || ""} ${activeRoom.doctor.user.firstName}`.trim()
+          : `${activeRoom.patient.user.lastName || ""} ${activeRoom.patient.user.firstName}`.trim(),
+      });
     }
-    try {
-      const response = await api.post("/video-calls", { doctorId: activeRoom.doctor.id, appointmentId: activeRoom.appointment.id });
-      const roomId = response.data.data.roomId as string;
-      console.log("video-call: chat open", { roomId, appointmentId: activeRoom.appointment.id, doctorId: activeRoom.doctor.id });
-      await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
-      setRooms((current) => current.map((room) => room.id === activeRoom.id ? { ...room, appointment: room.appointment ? { ...room.appointment, videoCall: { roomId, status: "ringing" } } : room.appointment } : room));
-      router.push(`/video-call/${roomId}?start=1`);
-    } catch {
-      window.alert("Видео өрөө үүсгэхэд алдаа гарлаа.");
-    }
+    await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+    await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+      roomId,
+      appointmentId: activeRoom.appointment.id,
+      callerId: user?.id,
+    });
+    window.location.href = `/video-call/${roomId}?start=1`;
   }
 
   return (
-    <div className="overflow-hidden rounded-lg bg-white shadow-soft">
-      <div className="flex items-center justify-between border-b p-4">
-        <div>
-          <h1 className="text-xl font-bold text-navy">Эмчтэй чатлах</h1>
-          <p className="mt-1 text-sm text-slate-500">Зурвасууд 5 секунд тутам шинэчлэгдэнэ.</p>
-        </div>
-        <DoctorOnlineStatus online={activeRoom?.doctor.online} />
-      </div>
-      <div className="grid min-h-[520px] lg:grid-cols-[260px_1fr]">
-        <aside className="border-b border-slate-100 bg-slate-50 p-3 lg:border-b-0 lg:border-r">
-          <div className="grid gap-2">
-            {rooms.map((room) => {
+    <div className="mx-auto grid h-[calc(100vh-110px)] min-h-[680px] max-w-[1480px] overflow-hidden rounded-2xl bg-white shadow-[0_18px_60px_rgba(15,23,42,0.08)] lg:grid-cols-[360px_minmax(520px,1fr)]">
+        <aside className="hidden min-h-0 flex-col border-r border-slate-200 bg-white lg:flex">
+          <div className="border-b border-slate-100 p-5">
+            <div className="flex items-center justify-between">
+              <h1 className="text-3xl font-black tracking-tight text-slate-950">Chats</h1>
+              <div className="flex gap-2">
+                <button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-900 transition hover:bg-slate-200" aria-label="More"><MoreHorizontal size={22} /></button>
+                <button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-900 transition hover:bg-slate-200" aria-label="New chat"><Edit3 size={21} /></button>
+              </div>
+            </div>
+            <label className="mt-5 flex h-12 items-center gap-3 rounded-full bg-slate-100 px-4 text-slate-500">
+              <Search size={22} />
+              <input className="min-w-0 flex-1 bg-transparent text-base font-semibold text-slate-900 outline-none placeholder:text-slate-500" placeholder="Search Messenger" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+            </label>
+            <div className="mt-4 flex items-center gap-3 text-sm font-extrabold text-slate-900">
+              <button type="button" className={`rounded-full px-4 py-2 ${filter === "all" ? "bg-blue-50 text-[#0084ff]" : "hover:bg-slate-100"}`} onClick={() => setFilter("all")}>All</button>
+              <button type="button" className={`rounded-full px-4 py-2 ${filter === "unread" ? "bg-blue-50 text-[#0084ff]" : "hover:bg-slate-100"}`} onClick={() => setFilter("unread")}>Unread</button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-color:#cbd5e1_transparent] [scrollbar-width:thin]">
+            <div className="grid gap-1">
+            {visibleRooms.map((room) => {
               const doctorName = `${room.doctor.user.lastName || ""} ${room.doctor.user.firstName}`.trim();
               const patientName = `${room.patient.user.lastName || ""} ${room.patient.user.firstName}`.trim();
               const title = user?.role === "DOCTOR" ? patientName : doctorName;
+              const lastPreview = room.appointment?.type === "ONLINE" ? "Онлайн зөвлөгөө" : room.doctor.specialty;
               return (
-                <button key={room.id} type="button" className={`rounded-xl px-3 py-3 text-left transition ${activeRoomId === room.id ? "bg-cyanSoft text-medical" : "bg-white text-slate-700 hover:bg-cyanSoft"}`} onClick={() => setActiveRoomId(room.id)}>
-                  <p className="font-bold">{title}</p>
-                  <p className="mt-1 text-xs text-slate-500">{room.doctor.specialty}</p>
+                <button key={room.id} type="button" className={`flex items-center gap-3 rounded-2xl p-3 text-left transition ${activeRoomId === room.id ? "bg-[#e7f3ff]" : "hover:bg-slate-100"}`} onClick={() => selectRoom(room.id)}>
+                  <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gradient-to-br from-sky-200 to-cyan-100 text-lg font-black text-[#0084ff]">
+                    {getInitials(title)}
+                    <span className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-white bg-emerald-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-extrabold text-slate-950">{title}</p>
+                    <p className="mt-0.5 truncate text-sm font-semibold text-slate-500">{lastPreview}</p>
+                  </div>
+                  {unreadRoomIds.has(room.id) && <span className="h-2.5 w-2.5 rounded-full bg-[#0084ff]" />}
                 </button>
               );
             })}
-            {rooms.length === 0 && <p className="rounded-xl bg-white p-4 text-sm font-semibold text-slate-500">Чат өрөө одоогоор алга.</p>}
+            {visibleRooms.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">Чат олдсонгүй.</p>}
+            </div>
           </div>
         </aside>
-        <main className="flex min-h-[520px] flex-col">
-          <div className="border-b p-4">
-            <h2 className="font-bold text-navy">{activeRoom ? (user?.role === "DOCTOR" ? `${activeRoom.patient.user.lastName || ""} ${activeRoom.patient.user.firstName}`.trim() : `${activeRoom.doctor.user.lastName || ""} ${activeRoom.doctor.user.firstName}`.trim()) : "Чат сонгоно уу"}</h2>
+        <main className="flex min-h-0 flex-col bg-white">
+          <div className="flex h-20 items-center justify-between border-b border-slate-200 px-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="relative grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-sky-200 to-cyan-100 text-base font-black text-[#0084ff]">
+                {activeInitials}
+                {activeRoom && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />}
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-950">{activeTitle}</h2>
+                <div className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-slate-500">
+                  <span>{activeRoom ? "Active now" : "Чат сонгоно уу"}</span>
+                  {activeRoom && <DoctorOnlineStatus online={activeRoom?.doctor.online} />}
+                </div>
+              </div>
+            </div>
             {activeRoom?.appointment && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
-                <span className="rounded-full bg-cyanSoft px-3 py-1 text-medical">Онлайн зөвлөгөө</span>
-                <span>{formatDateTime(activeRoom.appointment.scheduledAt)}</span>
+              <div className="flex items-center gap-3 text-[#a100ff]">
                 {activeOnlineAppointment && (
-          <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-8 w-8 place-items-center rounded-full bg-medical text-white transition hover:bg-sky-600" onClick={openVideoCall}>
-                    <Video size={16} />
+                  <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-10 w-10 place-items-center rounded-full transition hover:bg-purple-50" onClick={startVideoCall}>
+                    <Video size={23} />
                   </button>
                 )}
               </div>
             )}
           </div>
-          <div className="grid flex-1 content-end gap-3 overflow-y-auto p-4">
-            {messages.map((message) => <MessageBubble key={message.id} mine={message.senderId === user?.id} text={message.content} />)}
+          {activeRoom?.appointment && (
+            <div className="border-b border-slate-100 px-5 py-2 text-xs font-bold text-slate-500">
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-[#0084ff]">Онлайн зөвлөгөө</span>
+              <span className="ml-2">{formatDateTime(activeRoom.appointment.scheduledAt)}</span>
+            </div>
+          )}
+          <div ref={messagesRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto scroll-smooth bg-white px-8 py-5 [scrollbar-color:#cbd5e1_transparent] [scrollbar-width:thin]">
+            <div className="mt-auto" />
+            {messages.map((message) => <MessageBubble key={message.id} mine={message.senderId === user?.id} text={message.content} status={message.status} />)}
             {activeRoom && messages.length === 0 && <p className="rounded-xl bg-cyanSoft p-4 text-sm font-semibold text-medical">Энэ чатад зурвас алга. Эхний зурвасаа илгээнэ үү.</p>}
           </div>
-          <div className="flex gap-2 border-t p-4">
+          <div className="flex items-center gap-2 border-t border-slate-200 bg-white p-4">
             <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={sendAttachment} />
-            <Button variant="outline" className="w-12 px-0" aria-label="Файл хавсаргах" disabled={!activeRoomId || uploading} onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></Button>
-            <Input placeholder="Зурвас бичих" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} disabled={!activeRoomId} />
-            <Button className="w-12 px-0" aria-label="Илгээх" disabled={!activeRoomId || sending || uploading} onClick={sendMessage}><Send size={18} /></Button>
+            <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-[#0084ff] hover:bg-blue-50" aria-label="Файл хавсаргах" disabled={!activeRoomId || uploading} onClick={() => fileInputRef.current?.click()}><Paperclip size={20} /></button>
+            <div className="flex h-12 flex-1 items-center gap-2 rounded-full bg-[#f0f2f5] px-4">
+              <input className="min-w-0 flex-1 bg-transparent text-base font-medium text-slate-900 outline-none placeholder:text-slate-500" placeholder="Aa" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} disabled={!activeRoomId} />
+              <Smile className="text-[#0084ff]" size={22} />
+            </div>
+            <button type="button" className="grid h-10 w-10 place-items-center rounded-full bg-[#0084ff] text-white transition hover:bg-blue-600" aria-label="Илгээх" disabled={!activeRoomId || sending || uploading} onClick={sendMessage}><Send size={18} /></button>
           </div>
         </main>
-      </div>
-      <IncomingCallPopup rooms={rooms} onAccept={(roomId) => router.push(`/video-call/${roomId}?accept=1`)} onDecline={async (roomId) => { await api.patch("/video-calls", { roomId, status: "declined" }).catch(() => null); setRooms((current) => current.map((room) => room.appointment?.videoCall?.roomId === roomId && room.appointment.videoCall ? { ...room, appointment: { ...room.appointment, videoCall: { ...room.appointment.videoCall, status: "declined" } } } : room)); }} />
-    </div>
-  );
-}
-
-function IncomingCallPopup({ rooms, onAccept, onDecline }: { rooms: ChatRoom[]; onAccept: (roomId: string) => void; onDecline: (roomId: string) => void }) {
-  const user = useAuthStore((state) => state.user);
-  const ringingRoom = rooms.find((room) => room.appointment?.videoCall?.status === "ringing" && room.appointment.videoCall.roomId);
-  if (!ringingRoom?.appointment?.videoCall?.roomId) return null;
-  const callerName = user?.role === "DOCTOR"
-    ? `${ringingRoom.patient.user.lastName || ""} ${ringingRoom.patient.user.firstName}`.trim()
-    : `${ringingRoom.doctor.user.lastName || ""} ${ringingRoom.doctor.user.firstName}`.trim();
-  const roomId = ringingRoom.appointment.videoCall.roomId;
-  return (
-    <div className="fixed inset-0 z-[120] grid place-items-center bg-slate-900/40 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-5 text-center shadow-[0_24px_80px_rgba(14,116,144,0.25)]">
-        <button type="button" className="ml-auto grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-slate-100" onClick={() => onDecline(roomId)} aria-label="Close incoming call"><X size={17} /></button>
-        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-cyanSoft text-medical"><Video size={28} /></div>
-        <h2 className="mt-4 text-xl font-extrabold text-navy">Видео дуудлага ирлээ</h2>
-        <p className="mt-2 text-sm font-semibold text-slate-600">{callerName || "MediConnect хэрэглэгч"}</p>
-        <div className="mt-5 flex justify-center gap-3">
-          <button type="button" className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700" onClick={() => onAccept(roomId)}>
-            <Video size={16} /> Accept
-          </button>
-          <button type="button" className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-5 py-3 text-sm font-bold text-white hover:bg-rose-700" onClick={() => onDecline(roomId)}>
-            <PhoneOff size={16} /> Decline
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -241,4 +349,25 @@ function formatDateTime(value: string) {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${year}.${month}.${day} ${hours}:${minutes}`;
+}
+
+function normalizeMessages(rows: ChatMessage[]) {
+  return [...rows].sort((first, second) => {
+    const firstTime = first.createdAt ? new Date(first.createdAt).getTime() : 0;
+    const secondTime = second.createdAt ? new Date(second.createdAt).getTime() : 0;
+    return firstTime - secondTime;
+  });
+}
+
+function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
+  const byId = new Map<string, ChatMessage>();
+  for (const message of current) byId.set(message.id, message);
+  for (const message of incoming) byId.set(message.id, message);
+  return normalizeMessages(Array.from(byId.values()));
+}
+
+function getInitials(name: string) {
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "MC";
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }

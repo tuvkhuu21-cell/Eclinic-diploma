@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { CalendarClock, MessageCircle, Video } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/store/auth.store";
+import { broadcastRealtime } from "@/lib/supabase-realtime";
 
 type DoctorAppointment = {
   id: string;
@@ -18,6 +19,7 @@ type DoctorAppointment = {
   patient: {
     chatRooms?: Array<{ id: string }>;
     user: {
+      id?: string;
       firstName: string;
       lastName?: string;
     };
@@ -25,7 +27,7 @@ type DoctorAppointment = {
 };
 
 export function DoctorAppointmentList() {
-  const router = useRouter();
+  const user = useAuthStore((state) => state.user);
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,24 +38,28 @@ export function DoctorAppointmentList() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function openVideoCall(appointment: DoctorAppointment) {
-    const roomId = appointment.videoCall?.roomId;
-    const status = appointment.videoCall?.status;
-    if (roomId && status !== "ended" && status !== "declined") {
-      await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
-      router.push(`/video-call/${roomId}?start=1`);
-      return;
+  async function startVideoCall(appointment: DoctorAppointment) {
+    const response = await api.post("/video-calls", {
+      doctorId: appointment.doctorId,
+      appointmentId: appointment.id,
+    });
+    const roomId = response.data.data.roomId as string;
+    await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+    const patientUserId = appointment.patient.user.id;
+    if (patientUserId) {
+      await broadcastRealtime(`user-notifications-${patientUserId}`, "incoming-video-call", {
+        roomId,
+        appointmentId: appointment.id,
+        callerId: user?.id,
+        callerName: `Dr. ${user?.lastName || ""} ${user?.firstName || ""}`.trim(),
+      });
     }
-    try {
-      const response = await api.post("/video-calls", { doctorId: appointment.doctorId, appointmentId: appointment.id });
-      const nextRoomId = response.data.data.roomId as string;
-      console.log("video-call: doctor appointment open", { roomId: nextRoomId, appointmentId: appointment.id, doctorId: appointment.doctorId });
-      await api.patch("/video-calls", { roomId: nextRoomId, status: "ringing" }).catch(() => null);
-      setAppointments((current) => current.map((item) => item.id === appointment.id ? { ...item, videoCall: { roomId: nextRoomId, status: "ringing" } } : item));
-      router.push(`/video-call/${nextRoomId}?start=1`);
-    } catch {
-      window.alert("Видео өрөө үүсгэхэд алдаа гарлаа.");
-    }
+    await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+      roomId,
+      appointmentId: appointment.id,
+      callerId: user?.id,
+    });
+    window.location.href = `/video-call/${roomId}?start=1`;
   }
 
   if (loading) {
@@ -92,7 +98,7 @@ export function DoctorAppointmentList() {
                 </Link>
               )}
               {isOnline && (
-                <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-9 w-9 place-items-center rounded-full bg-medical text-white transition hover:bg-sky-600" onClick={() => openVideoCall(appointment)}>
+                <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-9 w-9 place-items-center rounded-full bg-medical text-white transition hover:bg-sky-600" onClick={() => void startVideoCall(appointment)}>
                   <Video size={15} />
                 </button>
               )}

@@ -4,6 +4,21 @@ import { ApiError } from "@/lib/errors";
 const closedStatuses = new Set(["ended", "declined"]);
 
 export const videoService = {
+  async incoming(userId: string) {
+    const calls = await prisma.videoCall.findMany({
+      where: {
+        status: "ringing",
+        OR: [{ patient: { userId } }, { doctor: { userId } }],
+      },
+      include: {
+        patient: { include: { user: true } },
+        doctor: { include: { user: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    });
+    return calls;
+  },
   async getByRoom(userId: string, roomId: string) {
     const call = await prisma.videoCall.findUnique({
       where: { roomId },

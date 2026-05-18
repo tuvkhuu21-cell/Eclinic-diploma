@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const user = getAuthUser(request);
     return ok(await notificationService.list(user.userId));
   } catch (error) {
+    if (error instanceof ApiError && (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 404)) return ok([]);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }
@@ -29,4 +30,3 @@ export async function POST(request: NextRequest) {
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }
-

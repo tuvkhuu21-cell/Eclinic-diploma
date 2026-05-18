@@ -32,7 +32,7 @@ services:
     environment:
       DATABASE_URL: ${DOCKER_DATABASE_URL}
     ports:
-      - "3000:3000"
+      - "3001:3001"
 
 volumes:
   mediconnect_pg:

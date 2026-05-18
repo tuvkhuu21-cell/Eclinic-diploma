@@ -3,15 +3,31 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarClock, Download, Eye, FileText, FileX2, MessageCircle, Video, X } from "lucide-react";
 import { PatientSidebar, type PatientSection } from "./PatientSidebar";
 import { PatientProfileForm } from "./PatientProfileForm";
 import { PatientHealthForm } from "./PatientHealthForm";
 import { PatientLifestyleForm } from "./PatientLifestyleForm";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/store/auth.store";
+import { broadcastRealtime } from "@/lib/supabase-realtime";
 
 export function PatientDashboardContent() {
+  const router = useRouter();
+  const { hasHydrated, token, role, user } = useAuthStore();
   const [section, setSection] = useState<PatientSection>("labs");
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    const activeRole = user?.role || role;
+    if (!token) {
+      router.replace("/");
+      return;
+    }
+    if (activeRole === "DOCTOR") router.replace("/dashboard/doctor");
+  }, [hasHydrated, role, router, token, user?.role]);
+
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("section");
     if (requested === "profile") setSection("personal");
@@ -20,6 +36,10 @@ export function PatientDashboardContent() {
     if (requested === "doctors") setSection("doctors");
     if (requested === "orders") setSection("orders");
   }, []);
+
+  if (!hasHydrated) return <section className="min-h-screen bg-slate-50" />;
+  if (user?.role === "DOCTOR" || role === "DOCTOR") return <section className="min-h-screen bg-slate-50" />;
+
   return (
     <section className="bg-slate-50 px-4 py-8">
       <div className="mx-auto max-w-7xl">
@@ -132,12 +152,13 @@ type PatientAppointment = {
     specialty: string;
     hospital?: { name: string } | null;
     chatRooms?: Array<{ id: string }>;
-    user: { firstName: string; lastName?: string };
+    user: { id?: string; firstName: string; lastName?: string };
   };
   videoCall?: { roomId: string; status?: string } | null;
 };
 
 function MyDoctorsSection() {
+  const user = useAuthStore((state) => state.user);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -189,7 +210,7 @@ function MyDoctorsSection() {
                   <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-400"><MessageCircle size={16} />Чат байхгүй</span>
                 ) : null}
                 {!isHospitalVisit && (
-                  <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-10 w-10 place-items-center rounded-full border border-sky-100 text-medical transition hover:bg-cyanSoft" onClick={() => openPatientVideoCall(appointment)}>
+                  <button type="button" title="Видео дуудлага" aria-label="Видео дуудлага" className="grid h-10 w-10 place-items-center rounded-full bg-medical text-white transition hover:bg-sky-600" onClick={() => void startPatientVideoCall(appointment, user)}>
                     <Video size={17} />
                   </button>
                 )}
@@ -332,25 +353,32 @@ function isPaidAppointment(appointment: PatientAppointment) {
   return appointment.paymentStatus === "PAID" || appointment.status === "CONFIRMED" || appointment.status === "COMPLETED";
 }
 
-async function openPatientVideoCall(appointment: PatientAppointment) {
-  if (appointment.videoCall?.roomId && appointment.videoCall.status !== "ended" && appointment.videoCall.status !== "declined") {
-    await api.patch("/video-calls", { roomId: appointment.videoCall.roomId, status: "ringing" }).catch(() => null);
-    window.location.href = `/video-call/${appointment.videoCall.roomId}?start=1`;
-    return;
-  }
-  try {
-    const response = await api.post("/video-calls", { doctorId: appointment.doctor.id, appointmentId: appointment.id });
-    const roomId = response.data.data.roomId as string;
-    console.log("video-call: patient dashboard open", { roomId, appointmentId: appointment.id, doctorId: appointment.doctor.id });
-    await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
-    window.location.href = `/video-call/${roomId}?start=1`;
-  } catch {
-    window.alert("Видео өрөө үүсгэхэд алдаа гарлаа.");
-  }
-}
-
 function formatDoctorName(appointment: PatientAppointment) {
   return `${appointment.doctor.user.lastName || ""} ${appointment.doctor.user.firstName}`.trim();
+}
+
+async function startPatientVideoCall(appointment: PatientAppointment, user?: { id: string; firstName: string; lastName?: string }) {
+  const response = await api.post("/video-calls", {
+    doctorId: appointment.doctor.id,
+    appointmentId: appointment.id,
+  });
+  const roomId = response.data.data.roomId as string;
+  await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+  const doctorUserId = appointment.doctor.user.id;
+  if (doctorUserId) {
+    await broadcastRealtime(`user-notifications-${doctorUserId}`, "incoming-video-call", {
+      roomId,
+      appointmentId: appointment.id,
+      callerId: user?.id,
+      callerName: `${user?.lastName || ""} ${user?.firstName || "Үйлчлүүлэгч"}`.trim(),
+    });
+  }
+  await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+    roomId,
+    appointmentId: appointment.id,
+    callerId: user?.id,
+  });
+  window.location.href = `/video-call/${roomId}?start=1`;
 }
 
 function formatDateTime(value: string) {

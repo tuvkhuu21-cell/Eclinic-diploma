@@ -43,13 +43,12 @@ export function PatientSidebar({ active, onSelect }: { active: PatientSection; o
               {group.items.map((item) => {
                 const key = item.label === "Шинжилгээ" ? "labs" : item.label === "Миний эмч" ? "doctors" : item.label === "Цаг захиалга" ? "appointments" : item.label === "Захиалгын түүх" ? "orders" : item.key;
                 const selectable = key === "personal" || key === "health" || key === "lifestyle" || key === "labs" || key === "doctors" || key === "appointments" || key === "orders";
-                const comingSoon = group.title === "Бусад" && item.label !== "Захиалгын түүх";
+                const otherPlaceholder = group.title === "Бусад" && item.label !== "Захиалгын түүх";
                 return (
-                  <button key={`${group.title}-${item.label}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold ${active === key ? "bg-cyanSoft text-medical" : "text-slate-600 hover:bg-slate-50"}`} onClick={() => comingSoon ? setNotice(`${item.label} тун удахгүй нэмэгдэнэ.`) : selectable && onSelect(key as PatientSection)}>
+                  <button key={`${group.title}-${item.label}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold ${active === key ? "bg-cyanSoft text-medical" : "text-slate-600 hover:bg-slate-50"}`} onClick={() => otherPlaceholder ? setNotice(`${item.label} удахгүй нэмэгдэнэ.`) : selectable && onSelect(key as PatientSection)}>
                     <UserRound size={15} />
                     <span className="flex-1">{item.label}</span>
-                    {comingSoon && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">0</span>}
-                    {comingSoon && <span className="rounded-full bg-cyanSoft px-2 py-0.5 text-[10px] font-bold text-medical">Тун удахгүй</span>}
+                    {otherPlaceholder && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">0</span>}
                   </button>
                 );
               })}

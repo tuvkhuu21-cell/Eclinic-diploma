@@ -7,6 +7,7 @@ import { ImmediateConsultationSelector } from "./ImmediateConsultationSelector";
 import { DoctorProfileModal } from "@/components/doctors/DoctorProfileModal";
 import type { Doctor } from "@/components/doctors/DoctorCard";
 import { api } from "@/services/api";
+import { removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 export function ImmediateConsultationPage() {
   const router = useRouter();
@@ -21,6 +22,13 @@ export function ImmediateConsultationPage() {
 
   useEffect(() => {
     api.get("/doctors").then((response) => setDoctors(response.data.data as Doctor[])).catch(() => setDoctors([]));
+  }, []);
+
+  useEffect(() => {
+    const channel = subscribeBroadcast<{ doctorId: string; online: boolean; supportsOnline?: boolean }>("doctor-status", "status-changed", (event) => {
+      setDoctors((current) => current.map((doctor) => doctor.id === event.doctorId ? { ...doctor, online: event.online, supportsOnline: event.supportsOnline ?? doctor.supportsOnline } : doctor));
+    });
+    return () => removeRealtimeChannel(channel);
   }, []);
 
   const visibleDoctors = useMemo(() => {

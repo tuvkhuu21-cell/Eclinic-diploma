@@ -8,3 +8,5 @@ coverage
 uploads
 prisma/migrations/dev.db
 
+
+certificates

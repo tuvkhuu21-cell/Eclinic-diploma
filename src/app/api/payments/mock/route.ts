@@ -5,6 +5,7 @@ import { getAuthUser } from "@/lib/api-auth";
 import { requireRole } from "@/lib/api-role";
 import { options } from "@/lib/response";
 import { prisma } from "@/lib/prisma";
+import { broadcastRealtimeServer } from "@/lib/supabase-realtime-server";
 
 export const runtime = "nodejs";
 export const OPTIONS = options;
@@ -140,6 +141,11 @@ export async function POST(request: NextRequest) {
         notifications: { patient: patientNotification, doctor: doctorNotification },
       };
     });
+
+    await Promise.all([
+      broadcastRealtimeServer(`user-notifications-${user.userId}`, "new-notification", result.notifications.patient),
+      result.notifications.doctor ? broadcastRealtimeServer(`user-notifications-${result.notifications.doctor.userId}`, "new-notification", result.notifications.doctor) : Promise.resolve(),
+    ]).catch(() => null);
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {

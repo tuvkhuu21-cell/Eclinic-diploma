@@ -31,7 +31,15 @@ export const authService = {
     return authPayload(user);
   },
   async login(input: LoginInput) {
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
+    const identifier = input.email.trim();
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { phone: identifier },
+        ],
+      },
+    });
     if (!user || !(await comparePassword(input.password, user.passwordHash))) throw new ApiError(401, "Invalid credentials");
     return authPayload(user);
   },

@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { authService } from "@/services/auth.service";
+import { api } from "@/services/api";
 import { AuthRole, AuthUser, useAuthStore } from "@/store/auth.store";
 
 type Mode = "login" | "register";
@@ -50,6 +51,7 @@ export function PublicAuthModal({ mode, onClose, onModeChange }: { mode: Mode | 
       const response = await authService.login({ email: email.trim(), password });
       const { token, user } = getAuthPayload(response.data);
       setAuth(token, user);
+      if (user.role === "DOCTOR") await api.patch("/doctors/me", { online: true }).catch(() => null);
       setAlert({ type: "success", text: "Амжилттай нэвтэрлээ" });
       window.setTimeout(() => {
         onClose();

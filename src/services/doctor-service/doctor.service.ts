@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { signJwt } from "@/lib/jwt";
 import { ApiError } from "@/lib/errors";
 import { hashPassword } from "@/lib/bcrypt";
+import { broadcastRealtimeServer } from "@/lib/supabase-realtime-server";
 import type { z } from "zod";
 import type { doctorProfileUpdateSchema, doctorRegisterSchema } from "./doctor.schema";
 
@@ -68,15 +69,17 @@ export const doctorService = {
     if (!doctor) throw new ApiError(404, "Doctor profile not found");
     const hospitalId = await findHospitalId(input.hospital);
     return prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          firstName: input.firstName,
-          lastName: input.lastName,
-          phone: input.phone,
-        },
-      });
-      return tx.doctorProfile.update({
+      if (input.firstName !== undefined || input.lastName !== undefined || input.phone !== undefined) {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            firstName: input.firstName,
+            lastName: input.lastName,
+            phone: input.phone,
+          },
+        });
+      }
+      const updated = await tx.doctorProfile.update({
         where: { userId },
         data: {
           specialty: input.specialty,
@@ -84,13 +87,22 @@ export const doctorService = {
           experience: input.experience,
           fee: input.fee,
           bio: input.bio,
-          online: input.online ?? false,
-          supportsOnline: input.supportsOnline ?? input.online ?? false,
-          supportsInPerson: input.supportsInPerson ?? false,
-          hospitalId,
+          online: input.online,
+          supportsOnline: input.supportsOnline ?? input.online ?? undefined,
+          supportsInPerson: input.supportsInPerson,
+          hospitalId: input.hospital !== undefined ? hospitalId : undefined,
         },
         include: { user: true, hospital: true },
       });
+      if (input.online !== undefined) {
+        await broadcastRealtimeServer("doctor-status", "status-changed", {
+          doctorId: updated.id,
+          userId,
+          online: updated.online,
+          supportsOnline: updated.supportsOnline,
+        }).catch(() => null);
+      }
+      return updated;
     });
   },
 };
