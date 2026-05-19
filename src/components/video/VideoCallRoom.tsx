@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
-import { broadcastRealtime, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
+import { broadcastRealtime, isSupabaseRealtimeEnabled, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type SignalMessage = {
   id: string;
@@ -89,6 +89,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   const [status, setStatus] = useState<"idle" | "waiting" | "ringing" | "active" | "declined" | "ended">("idle");
   const [notice, setNotice] = useState("Камер, микрофоноо зөвшөөрөөд дуудлага эхлүүлнэ үү.");
   const [permissionError, setPermissionError] = useState("");
+  const realtimeEnabled = isSupabaseRealtimeEnabled();
 
   useEffect(() => {
     let cancelled = false;
@@ -128,12 +129,13 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }, []);
 
   useEffect(() => {
+    if (realtimeEnabled) return;
     const timer = window.setInterval(() => {
       void loadSignals();
       if (startAfterAcceptRef.current && !startedRef.current) void checkAcceptedAndStart();
-    }, 2_500);
+    }, 5_000);
     return () => window.clearInterval(timer);
-  }, [roomId]);
+  }, [roomId, realtimeEnabled]);
 
   useEffect(() => {
     if (status === "ended" || status === "declined") return;
@@ -233,13 +235,13 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       if (message.createdAt && message.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = message.createdAt;
       setMessages((current) => upsertMessages(current, message));
     });
-    const timer = window.setInterval(refreshMessages, 3_000);
+    const timer = realtimeEnabled ? null : window.setInterval(refreshMessages, 15_000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer) window.clearInterval(timer);
       removeRealtimeChannel(channel);
     };
-  }, [meta?.chatRoom?.id]);
+  }, [meta?.chatRoom?.id, realtimeEnabled]);
 
   useEffect(() => {
     const scrollElement = chatScrollRef.current;

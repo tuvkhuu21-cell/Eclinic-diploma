@@ -1,7 +1,11 @@
 import axios from "axios";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
-const normalizedBaseUrl = apiBaseUrl ? (apiBaseUrl.endsWith("/api") ? apiBaseUrl : `${apiBaseUrl.replace(/\/$/, "")}/api`) : "/api";
+const normalizedBaseUrl = typeof window !== "undefined"
+  ? "/api"
+  : apiBaseUrl
+    ? (apiBaseUrl.endsWith("/api") ? apiBaseUrl : `${apiBaseUrl.replace(/\/$/, "")}/api`)
+    : "/api";
 
 export const apiClient = axios.create({
   baseURL: normalizedBaseUrl,

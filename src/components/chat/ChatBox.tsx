@@ -8,7 +8,7 @@ import { MessageBubble } from "./MessageBubble";
 import { DoctorOnlineStatus } from "./DoctorOnlineStatus";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
-import { broadcastRealtime, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
+import { broadcastRealtime, isSupabaseRealtimeEnabled, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type ChatRoom = {
   id: string;
@@ -52,6 +52,7 @@ export function ChatBox() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialScrollDoneRef = useRef(false);
   const latestMessageAtRef = useRef("");
+  const realtimeEnabled = isSupabaseRealtimeEnabled();
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -140,15 +141,15 @@ export function ChatBox() {
         });
       }
     });
-    const timer = window.setInterval(() => {
+    const timer = realtimeEnabled ? null : window.setInterval(() => {
       void refreshMessages(activeRoomId);
-    }, 3_000);
+    }, 15_000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer) window.clearInterval(timer);
       removeRealtimeChannel(channel);
     };
-  }, [activeRoomId, refreshMessages]);
+  }, [activeRoomId, refreshMessages, realtimeEnabled, user?.id]);
 
   useEffect(() => {
     const element = messagesRef.current;

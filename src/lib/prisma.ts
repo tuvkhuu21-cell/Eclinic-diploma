@@ -11,7 +11,8 @@ function getRuntimeDatabaseUrl() {
     const parsed = new URL(databaseUrl);
     if (parsed.hostname.includes("pooler.supabase.com")) {
       if (!parsed.searchParams.has("pgbouncer")) parsed.searchParams.set("pgbouncer", "true");
-      if (!parsed.searchParams.has("connection_limit")) parsed.searchParams.set("connection_limit", "1");
+      const currentLimit = Number(parsed.searchParams.get("connection_limit") || "0");
+      if (!currentLimit || currentLimit < 3) parsed.searchParams.set("connection_limit", "3");
     }
     return parsed.toString();
   } catch {

@@ -6,7 +6,7 @@ import { MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
-import { removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
+import { isSupabaseRealtimeEnabled, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type NotificationRow = {
   id: string;
@@ -19,6 +19,7 @@ type NotificationRow = {
 export function ChatIconLink({ className, iconSize = 19 }: { className?: string; iconSize?: number }) {
   const user = useAuthStore((state) => state.user);
   const [chatNotifications, setChatNotifications] = useState<NotificationRow[]>([]);
+  const realtimeEnabled = isSupabaseRealtimeEnabled();
   const unreadCount = useMemo(() => chatNotifications.filter((item) => !item.readAt).length, [chatNotifications]);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export function ChatIconLink({ className, iconSize = 19 }: { className?: string;
     }
 
     void loadUnreadChatNotifications();
-    const refreshTimer = window.setInterval(loadUnreadChatNotifications, 60_000);
+    const refreshTimer = realtimeEnabled ? null : window.setInterval(loadUnreadChatNotifications, 90_000);
     const channel = subscribeBroadcast<NotificationRow>(`user-notifications-${user.id}`, "new-notification", (notification) => {
       if (!isChatNotification(notification)) return;
       setChatNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)]);
@@ -47,10 +48,10 @@ export function ChatIconLink({ className, iconSize = 19 }: { className?: string;
 
     return () => {
       cancelled = true;
-      window.clearInterval(refreshTimer);
+      if (refreshTimer) window.clearInterval(refreshTimer);
       removeRealtimeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, realtimeEnabled]);
 
   function markChatRead() {
     const unread = chatNotifications.filter((item) => !item.readAt);

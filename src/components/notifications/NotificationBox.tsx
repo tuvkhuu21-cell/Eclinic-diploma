@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { NotificationItem } from "./NotificationItem";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/store/auth.store";
-import { removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
+import { isSupabaseRealtimeEnabled, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 
 type NotificationRow = {
   id: string;
@@ -26,6 +26,7 @@ export function NotificationBox({ variant = "list", buttonClassName }: { variant
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [todayKey, setTodayKey] = useState(() => formatDate(new Date().toISOString()));
   const rootRef = useRef<HTMLDivElement>(null);
+  const realtimeEnabled = isSupabaseRealtimeEnabled();
   const unreadCount = notifications.filter((item) => !item.readAt && formatDate(item.createdAt) === todayKey).length;
 
   useEffect(() => {
@@ -53,16 +54,16 @@ export function NotificationBox({ variant = "list", buttonClassName }: { variant
     }
 
     loadNotifications();
-    const refreshTimer = window.setInterval(loadNotifications, 60_000);
+    const refreshTimer = realtimeEnabled ? null : window.setInterval(loadNotifications, 90_000);
     const channel = user?.id ? subscribeBroadcast<NotificationRow>(`user-notifications-${user.id}`, "new-notification", (notification) => {
       setNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)]);
     }) : null;
     return () => {
       cancelled = true;
-      window.clearInterval(refreshTimer);
+      if (refreshTimer) window.clearInterval(refreshTimer);
       removeRealtimeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, realtimeEnabled]);
 
   useEffect(() => {
     if (!open) return;

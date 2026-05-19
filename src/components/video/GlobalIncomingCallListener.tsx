@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PhoneOff, Video, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { broadcastRealtime, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
+import { broadcastRealtime, isSupabaseRealtimeEnabled, removeRealtimeChannel, subscribeBroadcast } from "@/lib/supabase-realtime";
 import { useAuthStore } from "@/store/auth.store";
 import { api } from "@/services/api";
 
@@ -29,6 +29,7 @@ export function GlobalIncomingCallListener() {
   const ignoredRoomIdsRef = useRef<Set<string>>(new Set());
   const userId = user?.id ?? null;
   const enabled = Boolean(userId);
+  const realtimeEnabled = isSupabaseRealtimeEnabled();
   const isVideoPage = pathname?.startsWith("/video-call");
 
   const callerName = useMemo(() => incoming?.callerName || "MediConnect хэрэглэгч", [incoming?.callerName]);
@@ -57,7 +58,7 @@ export function GlobalIncomingCallListener() {
   }, [enabled, userId, isVideoPage]);
 
   useEffect(() => {
-    if (!enabled || !userId || isVideoPage || incoming) return;
+    if (!enabled || !userId || isVideoPage || incoming || realtimeEnabled) return;
     let cancelled = false;
 
     async function checkIncomingCall() {
@@ -79,12 +80,12 @@ export function GlobalIncomingCallListener() {
     }
 
     void checkIncomingCall();
-    const timer = window.setInterval(checkIncomingCall, 8_000);
+    const timer = window.setInterval(checkIncomingCall, 20_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [enabled, userId, isVideoPage, incoming, user?.role]);
+  }, [enabled, userId, isVideoPage, incoming, user?.role, realtimeEnabled]);
 
   useEffect(() => {
     if (!incoming) return;
