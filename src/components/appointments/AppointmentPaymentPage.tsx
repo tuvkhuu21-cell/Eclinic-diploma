@@ -68,8 +68,9 @@ export function AppointmentPaymentPage() {
       await api.post("/payments/mock", { doctorId, hospitalId, hospitalName, specialty, room, packageId, packageName, labName, scheduledAt: time, paymentStatus: "PAID", type, price: displayPrice });
       setMessage("Цаг амжилттай захиалагдлаа");
       setTimeout(() => router.push("/patient/home"), 700);
-    } catch {
-      setMessage("Төлбөр бүртгэх үед алдаа гарлаа");
+    } catch (error) {
+      const status = typeof error === "object" && error && "response" in error ? (error as { response?: { status?: number } }).response?.status : undefined;
+      setMessage(status === 409 ? "Энэ цаг аль хэдийн захиалагдсан байна. Өөр цаг сонгоно уу." : "Төлбөр бүртгэх үед алдаа гарлаа");
     } finally {
       setPaying(false);
     }

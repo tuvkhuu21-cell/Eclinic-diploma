@@ -42,7 +42,6 @@ export const doctorService = {
         verified: true,
         user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         hospital: { select: { id: true, name: true, address: true, phone: true } },
-        _count: { select: { appointments: true } },
       },
       orderBy: { user: { createdAt: "desc" } },
       take: Math.min(Math.max(Number(query.limit) || 50, 1), 60),

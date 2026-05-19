@@ -139,12 +139,24 @@ export const appointmentService = {
     const doctor = await prisma.doctorProfile.findUnique({ where: { id: data.doctorId }, include: { user: true } });
     if (!doctor) throw new ApiError(404, "Doctor not found");
     return prisma.$transaction(async (tx) => {
+      const scheduledAt = new Date(data.scheduledAt);
+      const lockKey = `${doctor.id}:${scheduledAt.toISOString().slice(0, 16)}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existingSlot = await tx.appointment.findFirst({
+        where: {
+          doctorId: doctor.id,
+          scheduledAt,
+          status: { in: ["PENDING", "CONFIRMED", "COMPLETED"] },
+        },
+        select: { id: true },
+      });
+      if (existingSlot) throw new ApiError(409, "Selected appointment slot is already booked");
       const appointment = await tx.appointment.create({
         data: {
           patientId: patient.id,
           doctorId: data.doctorId,
           hospitalId: data.hospitalId || doctor.hospitalId,
-          scheduledAt: new Date(data.scheduledAt),
+          scheduledAt,
           durationMinutes: data.durationMinutes || 30,
           type: data.type || "ONLINE",
           price: data.price && data.price > 0 ? data.price : doctor.fee > 0 ? doctor.fee : DEFAULT_ONLINE_PRICE,

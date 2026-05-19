@@ -33,6 +33,8 @@ type ChatMessage = {
 
 const emojiOptions = ["😀", "😄", "😊", "😍", "🥰", "😂", "😎", "🤔", "👍", "👏", "🙏", "💪", "❤️", "💙", "💚", "✨", "🔥", "🎉", "😷", "🤒", "💊", "🩺", "🏥", "✅"];
 const messageCache = new Map<string, ChatMessage[]>();
+let roomCache: ChatRoom[] | null = null;
+let roomsRequest: Promise<{ data: { data: ChatRoom[] } }> | null = null;
 
 export function ChatBox() {
   const user = useAuthStore((state) => state.user);
@@ -69,9 +71,17 @@ export function ChatBox() {
     let cancelled = false;
     async function loadRooms() {
       try {
-        const response = await api.get("/chat/rooms");
+        if (roomCache) {
+          setRooms(roomCache);
+          const requestedRoom = new URLSearchParams(window.location.search).get("roomId");
+          const initialRoomId = requestedRoom || roomCache[0]?.id || "";
+          if (initialRoomId) setActiveRoomId((current) => current || initialRoomId);
+        }
+        roomsRequest = roomsRequest || api.get("/chat/rooms").finally(() => { roomsRequest = null; });
+        const response = await roomsRequest;
         if (cancelled) return;
         const rows = response.data.data as ChatRoom[];
+        roomCache = rows;
         setRooms(rows);
         setUnreadRoomIds((current) => current.size ? current : new Set(rows.map((room) => room.id)));
         if (firstLoad) {
@@ -308,7 +318,7 @@ export function ChatBox() {
     const roomId = call.roomId;
     const recipientUserId = user?.role === "DOCTOR" ? activeRoom.patient.user.id : activeRoom.doctor.user.id;
     if (call.status !== "active") {
-      await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+      void api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
       if (recipientUserId) {
         void broadcastRealtime(`user-notifications-${recipientUserId}`, "incoming-video-call", {
           roomId,

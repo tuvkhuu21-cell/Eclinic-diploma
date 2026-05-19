@@ -101,6 +101,10 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   const realtimeEnabled = isSupabaseRealtimeEnabled();
 
   useEffect(() => {
+    console.info("video-call timing: room mounted", { roomId, at: Date.now() });
+  }, [roomId]);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadMeta() {
       try {
@@ -284,6 +288,17 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     cleanup(false);
   }, []);
 
+  useEffect(() => {
+    if (endedRef.current || status === "ended" || status === "declined") return;
+    const peer = peerRef.current || createPeer();
+    void ensureLocalStream(peer)
+      .then(() => {
+        console.info("video-call timing: local media ready", { roomId, at: Date.now() });
+        setNotice((current) => current.includes("Камер") || current.includes("Холбогдож") ? "Камер бэлэн. Нөгөө хэрэглэгч холбогдож байна..." : current);
+      })
+      .catch((error) => setPermissionError(getMediaErrorMessage(error)));
+  }, [roomId, status]);
+
   async function ringCall() {
     if (status === "active" || startedRef.current || acceptedRef.current) return;
     const response = await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
@@ -312,8 +327,10 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       await api.patch("/video-calls", { roomId, status: "active" }).catch(() => null);
       const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       const lowLatencyOffer = optimizeAudioDescription(offer);
+      console.info("video-call timing: offer created", { roomId, at: Date.now() });
       await peer.setLocalDescription(lowLatencyOffer);
       await sendSignal("offer", lowLatencyOffer);
+      console.info("video-call timing: offer sent", { roomId, at: Date.now() });
       setStatus("active");
       setNotice("Холболт хийгдэж байна...");
     } catch (error) {
@@ -361,6 +378,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     }
     if (signal.type === "answer" && peer.signalingState !== "stable") {
       await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as RTCSessionDescriptionInit));
+      console.info("video-call timing: answer received", { roomId, at: Date.now() });
       await flushPendingIce(peer);
       setStatus("active");
       setNotice("Дуудлага холбогдлоо.");
@@ -468,6 +486,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   function createPeer() {
     if (peerRef.current) return peerRef.current;
     const peer = new RTCPeerConnection(iceServers);
+    console.info("video-call timing: peer connection created", { roomId, at: Date.now() });
     peerRef.current = peer;
     peer.oniceconnectionstatechange = () => {
       if (peer.iceConnectionState === "checking") setNotice("Видео холболт шалгаж байна...");
@@ -478,6 +497,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       }
     };
     peer.ontrack = (event) => {
+      console.info("video-call timing: remote stream received", { roomId, kind: event.track.kind, at: Date.now() });
       if (event.track.kind === "audio") setReceiverLowLatency(event.receiver);
       const stream = event.streams[0] || remoteStreamRef.current || new MediaStream();
       if (!event.streams[0] && !stream.getTracks().some((track) => track.id === event.track.id)) stream.addTrack(event.track);
@@ -520,14 +540,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     if (endedRef.current) return;
     const key = `ice:${JSON.stringify(candidate)}`;
     if (sentSignalKeysRef.current.has(key)) return;
+    if (iceQueueRef.current.length === 0) console.info("video-call timing: first ICE candidate sent", { roomId, at: Date.now() });
     iceQueueRef.current.push(candidate);
-    if (iceFlushTimerRef.current) return;
-    iceFlushTimerRef.current = window.setTimeout(() => {
-      iceFlushTimerRef.current = null;
-      const candidates = [...iceQueueRef.current];
-      iceQueueRef.current = [];
-      for (const item of candidates) void sendSignal("ice", item);
-    }, 120);
+    void sendSignal("ice", candidate);
   }
 
   async function tuneOutboundMedia(peer: RTCPeerConnection) {

@@ -160,6 +160,7 @@ type PatientAppointment = {
     chatRooms?: Array<{ id: string }>;
     user: { id?: string; firstName: string; lastName?: string; email?: string; phone?: string | null };
   };
+  hospital?: { id?: string; name: string; address?: string; phone?: string } | null;
   videoCall?: { roomId: string; status?: string } | null;
 };
 
@@ -281,6 +282,7 @@ function InfoCard({ label, value }: { label: string; value?: string | null }) {
 function AppointmentHistorySection() {
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedAppointment, setSelectedAppointment] = useState<PatientAppointment | null>(null);
 
   useEffect(() => {
     api.get("/appointments/my")
@@ -322,7 +324,7 @@ function AppointmentHistorySection() {
                       Чатлах
                     </Link>
                   )}
-                  <button type="button" className="inline-flex items-center gap-2 rounded-full border border-sky-100 px-4 py-2 text-sm font-bold text-medical transition hover:bg-cyanSoft">
+                  <button type="button" className="inline-flex items-center gap-2 rounded-full border border-sky-100 px-4 py-2 text-sm font-bold text-medical transition hover:bg-cyanSoft" onClick={() => setSelectedAppointment(appointment)}>
                     <FileText size={16} />
                     Дэлгэрэнгүй
                   </button>
@@ -333,7 +335,58 @@ function AppointmentHistorySection() {
         })}
         {rows.length === 0 && <EmptyState text="Захиалсан цаг одоогоор алга." />}
       </div>
+      <AppointmentDetailModal appointment={selectedAppointment} onClose={() => setSelectedAppointment(null)} />
     </PanelShell>
+  );
+}
+
+function AppointmentDetailModal({ appointment, onClose }: { appointment: PatientAppointment | null; onClose: () => void }) {
+  if (!appointment) return null;
+  const doctorName = formatDoctorName(appointment);
+  const receiptNo = `MC-${appointment.id.slice(-8).toUpperCase()}`;
+  const amount = appointment.price || appointment.doctor.fee || 30000;
+  const isPackageOrder = appointment.type === "PACKAGE_ORDER";
+  return (
+    <div className="fixed inset-0 z-[115] grid place-items-center bg-slate-900/45 px-4 py-6 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-[0_24px_80px_rgba(25,105,89,0.25)]" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 bg-gradient-to-br from-[#237b68] to-[#8fd8bf] p-6 text-white">
+          <div>
+            <p className="text-sm font-bold text-emerald-50">Цаг захиалгын дэлгэрэнгүй</p>
+            <h2 className="mt-1 text-2xl font-extrabold">{isPackageOrder ? appointment.packageName || "Багц шинжилгээ" : doctorName}</h2>
+            <p className="mt-2 text-sm font-semibold text-white/85">{formatAppointmentType(appointment.type)} · {formatDateTime(appointment.scheduledAt)}</p>
+          </div>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-full bg-white/15 transition hover:bg-white/25" onClick={onClose} aria-label="Close appointment detail">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid gap-5 p-6 lg:grid-cols-[1fr_320px]">
+          <section className="grid gap-3 rounded-2xl border border-emerald-100 bg-[#f8fcfa] p-4">
+            <InfoCard label="Эмч" value={isPackageOrder ? "Багц шинжилгээ" : doctorName} />
+            <InfoCard label="Үйлчлүүлэгч" value="Миний профайл" />
+            <InfoCard label="Огноо / цаг" value={formatDateTime(appointment.scheduledAt)} />
+            <InfoCard label="Үйлчилгээ" value={formatAppointmentType(appointment.type)} />
+            <InfoCard label="Эмнэлэг / Клиник" value={appointment.hospital?.name || appointment.doctor.hospital?.name || appointment.labName} />
+            <InfoCard label="Төлбөр" value={formatPaymentStatus(appointment.paymentStatus, appointment.status)} />
+            <InfoCard label="Төлөв" value={formatStatus(appointment.status)} />
+            <InfoCard label="Өрөө" value={appointment.room} />
+          </section>
+          <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+            <p className="text-sm font-extrabold text-navy">Төлбөрийн баримт</p>
+            <div className="mt-4 rounded-2xl bg-cyanSoft p-4 text-sm font-semibold text-slate-700">
+              <p><b>Баримт:</b> {receiptNo}</p>
+              <p className="mt-2"><b>Захиалга:</b> {appointment.id.slice(0, 10)}</p>
+              <p className="mt-2"><b>Дүн:</b> {formatCurrency(amount)}₮</p>
+              <p className="mt-2"><b>Төлөв:</b> Төлбөр төлөгдсөн</p>
+              <div className="mx-auto mt-4 grid h-36 w-36 grid-cols-5 gap-1 rounded-2xl bg-white p-3 shadow-sm">
+                {Array.from({ length: 25 }, (_, index) => (
+                  <span key={index} className={`rounded-sm ${qrCell(receiptNo, index) ? "bg-navy" : "bg-slate-100"}`} />
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -419,7 +472,7 @@ async function startPatientVideoCall(appointment: PatientAppointment, user?: { i
   const call = response.data.data as { roomId: string; status?: string };
   const roomId = call.roomId;
   if (call.status !== "active") {
-    await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+    void api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
     const doctorUserId = appointment.doctor.user.id;
     if (doctorUserId) {
       void broadcastRealtime(`user-notifications-${doctorUserId}`, "incoming-video-call", {
@@ -469,6 +522,11 @@ function formatStatus(status?: string) {
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("mn-MN").format(value);
+}
+
+function qrCell(seed: string, index: number) {
+  const charCode = seed.charCodeAt(index % seed.length) || 0;
+  return (charCode + index * 7) % 3 !== 0;
 }
 
 function LabResultsSection() {

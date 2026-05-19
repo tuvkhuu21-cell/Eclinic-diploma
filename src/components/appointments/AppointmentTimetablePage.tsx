@@ -13,6 +13,8 @@ type DaySlots = {
   slots: Array<{ iso: string; label: string }>;
 };
 
+type BookedSlot = { id: string; scheduledAt: string; status?: string; paymentStatus?: string };
+
 const weekdays = ["ням", "даваа", "мягмар", "лхагва", "пүрэв", "баасан", "бямба"];
 
 function toInputDate(date: Date) {
@@ -43,6 +45,8 @@ export function AppointmentTimetablePage() {
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [warning, setWarning] = useState("");
+  const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
     setDoctorId(new URLSearchParams(window.location.search).get("service") || "");
@@ -57,6 +61,20 @@ export function AppointmentTimetablePage() {
     if (!doctorId) return;
     api.get(`/doctors/${doctorId}`).then((response) => setDoctor(response.data.data as DoctorDetail)).catch(() => setDoctor(null));
   }, [doctorId]);
+
+  useEffect(() => {
+    if (!doctorId || !startDate || !endDate) return;
+    const controller = new AbortController();
+    setLoadingSlots(true);
+    api.get("/appointments/availability", { params: { doctorId, start: startDate, end: endDate }, signal: controller.signal })
+      .then((response) => {
+        const rows = (response.data.data || []) as BookedSlot[];
+        setBookedSlots(new Set(rows.map((row) => normalizeSlotKey(row.scheduledAt))));
+      })
+      .catch(() => setBookedSlots(new Set()))
+      .finally(() => setLoadingSlots(false));
+    return () => controller.abort();
+  }, [doctorId, endDate, startDate]);
 
   const daySlots = useMemo(() => (startDate && endDate ? generateAvailability(startDate, endDate) : []), [endDate, startDate]);
 
@@ -118,17 +136,21 @@ export function AppointmentTimetablePage() {
                     {day.label}
                   </button>
                   <div className="mt-4 grid gap-2 sm:grid-cols-3 md:grid-cols-4">
-                    {day.slots.map((slot) => (
-                      <button key={slot.iso} type="button" className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${selectedTime === slot.iso ? "border-medical bg-medical text-white" : "border-sky-100 bg-white text-slate-700 hover:bg-cyanSoft hover:text-medical"}`} onClick={() => { setSelectedDay(day.date); setSelectedTime(slot.iso); setWarning(""); }}>
+                    {day.slots.map((slot) => {
+                      const booked = bookedSlots.has(normalizeSlotKey(slot.iso));
+                      return (
+                      <button key={slot.iso} type="button" disabled={booked} className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${booked ? "cursor-not-allowed border-slate-300 bg-slate-800 text-white opacity-80" : selectedTime === slot.iso ? "border-medical bg-medical text-white" : "border-sky-100 bg-white text-slate-700 hover:bg-cyanSoft hover:text-medical"}`} onClick={() => { if (booked) return; setSelectedDay(day.date); setSelectedTime(slot.iso); setWarning(""); }}>
                         <Clock size={15} className="mx-auto mb-1" />
                         {slot.label}
+                        {booked && <span className="mt-1 block text-[10px] font-extrabold text-slate-200">Захиалагдсан</span>}
                       </button>
-                    ))}
+                    );})}
                     {day.slots.length === 0 && <p className="rounded-lg bg-cyanSoft p-3 text-sm font-semibold text-medical sm:col-span-3 md:col-span-4">Энэ өдөр боломжит цаг алга.</p>}
                   </div>
                 </div>
               ))}
             </div>
+            {loadingSlots && <p className="mt-4 rounded-lg bg-cyanSoft px-4 py-3 text-sm font-semibold text-medical">Захиалагдсан цагуудыг шалгаж байна...</p>}
             {warning && <p className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{warning}</p>}
             <div className="mt-6 flex justify-end">
               <Button disabled={!doctorId} onClick={continueToConfirmation}>Үргэлжлүүлэх →</Button>
@@ -138,6 +160,13 @@ export function AppointmentTimetablePage() {
       </div>
     </section>
   );
+}
+
+function normalizeSlotKey(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setSeconds(0, 0);
+  return date.toISOString();
 }
 
 function generateAvailability(startDate: string, endDate: string): DaySlots[] {

@@ -74,6 +74,19 @@ export async function POST(request: NextRequest) {
     const result = await prisma.$transaction(async (tx) => {
       const appointmentId = randomUUID();
       const status = paymentStatus === "PAID" ? "CONFIRMED" : "PENDING";
+      if (!isPackageOrder) {
+        const lockKey = `${doctor.id}:${scheduledDate.toISOString().slice(0, 16)}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        const existingSlot = await tx.appointment.findFirst({
+          where: {
+            doctorId: doctor.id,
+            scheduledAt: scheduledDate,
+            status: { in: ["PENDING", "CONFIRMED", "COMPLETED"] },
+          },
+          select: { id: true },
+        });
+        if (existingSlot) throw new ApiError(409, "Selected appointment slot is already booked");
+      }
 
       // The current local DB may not have newer appointment metadata columns yet.
       // Insert only the stable base columns, then return metadata in the API payload.

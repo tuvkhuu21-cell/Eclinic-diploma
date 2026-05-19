@@ -46,7 +46,7 @@ export function DoctorAppointmentList() {
     const call = response.data.data as { roomId: string; status?: string };
     const roomId = call.roomId;
     if (call.status !== "active") {
-      await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
+      void api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
       const patientUserId = appointment.patient.user.id;
       if (patientUserId) {
         void broadcastRealtime(`user-notifications-${patientUserId}`, "incoming-video-call", {
