@@ -156,6 +156,11 @@ model Appointment {
   doctor      DoctorProfile     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   hospital    Hospital?         @relation(fields: [hospitalId], references: [id])
   videoCall   VideoCall?
+
+  @@index([patientId, scheduledAt])
+  @@index([doctorId, scheduledAt])
+  @@index([doctorId, scheduledAt, status])
+  @@index([hospitalId, scheduledAt])
 }
 
 model Consultation {
@@ -189,6 +194,10 @@ model ChatRoom {
   patient     PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor      DoctorProfile  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   messages    Message[]
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([patientId, doctorId])
 }
 
 model Message {
@@ -199,6 +208,9 @@ model Message {
   createdAt DateTime @default(now())
   room      ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   sender    User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Notification {
@@ -210,6 +222,9 @@ model Notification {
   readAt    DateTime?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }
 
 model VideoCall {
@@ -225,6 +240,10 @@ model VideoCall {
   appointment   Appointment?    @relation(fields: [appointmentId], references: [id])
   patient       PatientProfile  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctor        DoctorProfile   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, status, startedAt])
+  @@index([doctorId, status, startedAt])
+  @@index([status, startedAt])
 }
 
 model AiConversation {

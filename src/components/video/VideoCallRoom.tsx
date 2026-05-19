@@ -234,7 +234,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
           initialChatLoadedRef.current = false;
           const rows = sortMessages(response.data.data as VideoChatMessage[]);
           latestVideoChatAtRef.current = rows.at(-1)?.createdAt || "";
-          setMessages(rows);
+          setMessages((current) => rows.reduce((next, row) => upsertMessages(next, row), current));
         }
       } catch {
         if (!cancelled) setMessages([]);
@@ -344,12 +344,12 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     if (acceptedRef.current) return;
     acceptedRef.current = true;
     setPermissionError("");
+    setStatus("active");
+    setNotice("Дуудлагад нэгдлээ. Холболт хүлээж байна...");
+    void api.patch("/video-calls", { roomId, status: "active" }).catch(() => null);
+    void broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId: user?.id });
     try {
       await ensureLocalStream(peerRef.current || createPeer());
-      await api.patch("/video-calls", { roomId, status: "active" });
-      void broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId: user?.id });
-      setStatus("active");
-      setNotice("Дуудлагад нэгдлээ. Холболт хүлээж байна...");
     } catch (error) {
       acceptedRef.current = false;
       setPermissionError(getMediaErrorMessage(error));

@@ -148,8 +148,11 @@ export function ChatBox() {
         if (!cancelled) {
           const rows = normalizeMessages(response.data.data as ChatMessage[]);
           latestMessageAtRef.current = rows.at(-1)?.createdAt || "";
-          setMessages(rows);
-          messageCache.set(activeRoomId, rows);
+          setMessages((current) => {
+            const merged = mergeMessages(current, rows);
+            messageCache.set(activeRoomId, merged);
+            return merged;
+          });
         }
       } catch {
         if (!cancelled && !cached) setMessages([]);

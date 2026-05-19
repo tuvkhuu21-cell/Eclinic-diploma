@@ -87,7 +87,7 @@ export const chatService = {
     const startedAt = Date.now();
     const room = await prisma.chatRoom.findFirst({
       where: { id: data.roomId, OR: [{ patient: { userId } }, { doctor: { userId } }] },
-      select: { patient: { select: { userId: true } }, doctor: { select: { userId: true } } },
+      select: { id: true },
     });
     if (!room) throw new ApiError(404, "Chat room not found");
     const roomLookupAt = Date.now();
@@ -96,38 +96,14 @@ export const chatService = {
       select: { id: true, roomId: true, senderId: true, content: true, createdAt: true },
     });
     const messageCreateAt = Date.now();
-    const recipientUserId = room?.patient.userId === userId ? room.doctor.userId : room?.patient.userId;
-    if (recipientUserId) {
-      setTimeout(() => {
-        void createChatNotification(recipientUserId);
-      }, 1);
-    }
-    const notificationQueuedAt = Date.now();
     const totalMs = Date.now() - startedAt;
     if (totalMs > 600) {
       console.info("chatService.send slow", {
         totalMs,
         roomLookupMs: roomLookupAt - startedAt,
         messageCreateMs: messageCreateAt - roomLookupAt,
-        notificationQueueMs: notificationQueuedAt - messageCreateAt,
       });
     }
     return message;
   },
 };
-
-async function createChatNotification(recipientUserId: string) {
-  try {
-    await prisma.notification.create({
-      data: {
-        userId: recipientUserId,
-        title: "Шинэ чат зурвас",
-        body: "Танд шинэ чат зурвас ирлээ.",
-        type: "CHAT",
-      },
-      select: { id: true, title: true, body: true, type: true, readAt: true, createdAt: true },
-    });
-  } catch (error) {
-    console.error("create chat notification failed", error);
-  }
-}

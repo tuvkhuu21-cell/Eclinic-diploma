@@ -86,7 +86,8 @@ export function GlobalIncomingCallListener() {
     }
 
     void checkIncomingCall();
-    const timer = window.setInterval(checkIncomingCall, 2_000);
+    const intervalMs = realtimeEnabled ? 8_000 : 2_000;
+    const timer = window.setInterval(checkIncomingCall, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

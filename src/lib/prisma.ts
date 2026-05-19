@@ -11,8 +11,8 @@ function getRuntimeDatabaseUrl() {
     const parsed = new URL(databaseUrl);
     if (parsed.hostname.includes("pooler.supabase.com")) {
       parsed.port = "6543";
-      parsed.searchParams.set("pgbouncer", "true");
-      parsed.searchParams.set("connection_limit", "1");
+      if (!parsed.searchParams.has("pgbouncer")) parsed.searchParams.set("pgbouncer", "true");
+      if (!parsed.searchParams.has("connection_limit")) parsed.searchParams.set("connection_limit", "3");
       if (!parsed.searchParams.has("pool_timeout")) parsed.searchParams.set("pool_timeout", "20");
     }
     return parsed.toString();
