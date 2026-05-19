@@ -32,6 +32,7 @@ type ChatMessage = {
 };
 
 const emojiOptions = ["😀", "😄", "😊", "😍", "🥰", "😂", "😎", "🤔", "👍", "👏", "🙏", "💪", "❤️", "💙", "💚", "✨", "🔥", "🎉", "😷", "🤒", "💊", "🩺", "🏥", "✅"];
+const messageCache = new Map<string, ChatMessage[]>();
 
 export function ChatBox() {
   const user = useAuthStore((state) => state.user);
@@ -52,6 +53,8 @@ export function ChatBox() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialScrollDoneRef = useRef(false);
   const latestMessageAtRef = useRef("");
+  const sendingRef = useRef(false);
+  const activeMessageRequestRef = useRef<AbortController | null>(null);
   const realtimeEnabled = isSupabaseRealtimeEnabled();
 
   useEffect(() => {
@@ -97,11 +100,15 @@ export function ChatBox() {
 
   const refreshMessages = useCallback(async (roomId: string, options?: { clearOnError?: boolean }) => {
     try {
-      const params = latestMessageAtRef.current ? { since: latestMessageAtRef.current, limit: 40 } : { limit: 80 };
+      const params = latestMessageAtRef.current ? { since: latestMessageAtRef.current, limit: 30 } : { limit: 50 };
       const response = await api.get(`/chat/rooms/${roomId}/messages`, { params });
       const rows = normalizeMessages(response.data.data as ChatMessage[]);
       if (rows.at(-1)?.createdAt) latestMessageAtRef.current = rows.at(-1)?.createdAt || latestMessageAtRef.current;
-      setMessages((current) => mergeMessages(current, rows));
+      setMessages((current) => {
+        const merged = mergeMessages(current, rows);
+        messageCache.set(roomId, merged);
+        return merged;
+      });
     } catch {
       if (options?.clearOnError) setMessages([]);
     }
@@ -114,25 +121,40 @@ export function ChatBox() {
     }
     initialScrollDoneRef.current = false;
     latestMessageAtRef.current = "";
+    activeMessageRequestRef.current?.abort();
+    const cached = messageCache.get(activeRoomId);
+    if (cached) {
+      setMessages(cached);
+      latestMessageAtRef.current = cached.at(-1)?.createdAt || "";
+    } else {
+      setMessages([]);
+    }
 
     let cancelled = false;
+    const controller = new AbortController();
+    activeMessageRequestRef.current = controller;
     async function loadMessages() {
       try {
-        const response = await api.get(`/chat/rooms/${activeRoomId}/messages`, { params: { limit: 80 } });
+        const response = await api.get(`/chat/rooms/${activeRoomId}/messages`, { params: { limit: 50 }, signal: controller.signal });
         if (!cancelled) {
           const rows = normalizeMessages(response.data.data as ChatMessage[]);
           latestMessageAtRef.current = rows.at(-1)?.createdAt || "";
           setMessages(rows);
+          messageCache.set(activeRoomId, rows);
         }
       } catch {
-        if (!cancelled) setMessages([]);
+        if (!cancelled && !cached) setMessages([]);
       }
     }
 
     loadMessages();
     const channel = subscribeBroadcast<ChatMessage>(`chat-room-${activeRoomId}`, "new-message", (message) => {
       if (message.createdAt && message.createdAt > latestMessageAtRef.current) latestMessageAtRef.current = message.createdAt;
-      setMessages((current) => mergeMessages(current, [message]));
+      setMessages((current) => {
+        const merged = mergeMessages(current, [message]);
+        messageCache.set(activeRoomId, merged);
+        return merged;
+      });
       if (message.senderId !== user?.id) {
         setUnreadRoomIds((current) => {
           const next = new Set(current);
@@ -146,6 +168,7 @@ export function ChatBox() {
     }, 15_000);
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) window.clearInterval(timer);
       removeRealtimeChannel(channel);
     };
@@ -188,7 +211,8 @@ export function ChatBox() {
 
   async function sendMessage() {
     const content = draft.trim();
-    if (!activeRoomId || !content || sending) return;
+    if (!activeRoomId || !content || sendingRef.current) return;
+    sendingRef.current = true;
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage: ChatMessage = {
       id: tempId,
@@ -197,19 +221,29 @@ export function ChatBox() {
       createdAt: new Date().toISOString(),
       status: "sending",
     };
-    setMessages((current) => mergeMessages(current, [optimisticMessage]));
+    setMessages((current) => {
+      const merged = mergeMessages(current, [optimisticMessage]);
+      messageCache.set(activeRoomId, merged);
+      return merged;
+    });
     setDraft("");
     setSending(true);
     try {
       const response = await api.post("/chat/messages", { roomId: activeRoomId, content });
       const saved = response.data.data as ChatMessage;
       if (saved.createdAt && saved.createdAt > latestMessageAtRef.current) latestMessageAtRef.current = saved.createdAt;
-      setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
+      setMessages((current) => {
+        const merged = mergeMessages(current.filter((message) => message.id !== tempId), [saved]);
+        messageCache.set(activeRoomId, merged);
+        return merged;
+      });
       void broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      broadcastChatNotification(activeRoom);
     } catch {
       setMessages((current) => current.map((message) => message.id === tempId ? { ...message, status: "failed" } : message));
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   }
 
@@ -238,6 +272,7 @@ export function ChatBox() {
       setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
       setDraft("");
       void broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      broadcastChatNotification(activeRoom);
     } catch {
       setMessages((current) => current.map((message) => message.status === "sending" ? { ...message, status: "failed" } : message));
     } finally {
@@ -290,6 +325,19 @@ export function ChatBox() {
       });
     }
     window.location.href = `/video-call/${roomId}${call.status === "active" ? "?accept=1" : "?start=1"}`;
+  }
+
+  function broadcastChatNotification(room?: ChatRoom) {
+    const recipientUserId = user?.role === "DOCTOR" ? room?.patient.user.id : room?.doctor.user.id;
+    if (!recipientUserId) return;
+    void broadcastRealtime(`user-notifications-${recipientUserId}`, "new-notification", {
+      id: `chat-${activeRoomId}-${Date.now()}`,
+      title: "Шинэ чат зурвас",
+      body: "Танд шинэ чат зурвас ирлээ.",
+      type: "CHAT",
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    });
   }
 
   return (

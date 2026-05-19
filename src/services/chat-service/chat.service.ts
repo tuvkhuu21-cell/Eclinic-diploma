@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/errors";
-import { broadcastRealtimeServer } from "@/lib/supabase-realtime-server";
 
 export const chatService = {
   async rooms(userId: string) {
@@ -71,7 +70,7 @@ export const chatService = {
       select: { id: true },
     });
     if (!room) throw new ApiError(404, "Chat room not found");
-    const limit = Math.min(Math.max(options?.limit || 80, 1), 100);
+    const limit = Math.min(Math.max(options?.limit || 50, 1), 50);
     const sinceDate = options?.since ? new Date(options.since) : null;
     const rows = await prisma.message.findMany({
       where: {
@@ -85,27 +84,31 @@ export const chatService = {
     return rows.reverse();
   },
   async send(userId: string, data: { roomId: string; content: string }) {
-    const room = await prisma.chatRoom.findUnique({
-      where: { id: data.roomId },
-      select: { id: true, patient: { select: { userId: true } }, doctor: { select: { userId: true } } },
+    const startedAt = Date.now();
+    const room = await prisma.chatRoom.findFirst({
+      where: { id: data.roomId, OR: [{ patient: { userId } }, { doctor: { userId } }] },
+      select: { patient: { select: { userId: true } }, doctor: { select: { userId: true } } },
     });
     if (!room) throw new ApiError(404, "Chat room not found");
-    if (room.patient.userId !== userId && room.doctor.userId !== userId) throw new ApiError(403, "Chat room access denied");
+    const authorizedAt = Date.now();
     const message = await prisma.message.create({
       data: { roomId: data.roomId, senderId: userId, content: data.content },
       select: { id: true, roomId: true, senderId: true, content: true, createdAt: true },
     });
+    const createdAt = Date.now();
     const recipientUserId = room?.patient.userId === userId ? room.doctor.userId : room?.patient.userId;
     if (recipientUserId) {
       void createChatNotification(recipientUserId);
     }
+    const totalMs = Date.now() - startedAt;
+    if (totalMs > 600) console.info("chatService.send slow", { totalMs, authMs: authorizedAt - startedAt, createMs: createdAt - authorizedAt });
     return message;
   },
 };
 
 async function createChatNotification(recipientUserId: string) {
   try {
-    const notification = await prisma.notification.create({
+    await prisma.notification.create({
       data: {
         userId: recipientUserId,
         title: "Шинэ чат зурвас",
@@ -114,7 +117,6 @@ async function createChatNotification(recipientUserId: string) {
       },
       select: { id: true, title: true, body: true, type: true, readAt: true, createdAt: true },
     });
-    void broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
   } catch (error) {
     console.error("create chat notification failed", error);
   }

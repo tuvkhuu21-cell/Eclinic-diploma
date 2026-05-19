@@ -74,7 +74,13 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   const startAfterAcceptRef = useRef(false);
   const startedRef = useRef(false);
   const acceptedRef = useRef(false);
+  const endedRef = useRef(false);
+  const isEndingRef = useRef(false);
   const ringingTimeoutRef = useRef<number | null>(null);
+  const sentSignalKeysRef = useRef<Set<string>>(new Set());
+  const signalAbortRef = useRef<AbortController | null>(null);
+  const iceQueueRef = useRef<RTCIceCandidateInit[]>([]);
+  const iceFlushTimerRef = useRef<number | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
@@ -102,6 +108,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
         console.log("video-call: current status", { roomId: next.roomId, status: next.status, appointmentId: next.appointmentId, doctorId: next.doctorId, patientId: next.patientId });
         setStatus(next.status || "waiting");
         if (next.status === "declined" || next.status === "ended") {
+          endedRef.current = true;
           setNotice(next.status === "declined" ? "Дуудлагаас татгалзсан байна." : "Дуудлага дууссан байна.");
           cleanup(next.status === "ended");
           if (next.status === "declined") setStatus("declined");
@@ -130,7 +137,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     if (realtimeEnabled) return;
+    if (endedRef.current || status === "ended" || status === "declined") return;
     const timer = window.setInterval(() => {
+      if (endedRef.current) return;
       void loadSignals();
       if (startAfterAcceptRef.current && !startedRef.current) void checkAcceptedAndStart();
     }, 5_000);
@@ -138,8 +147,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }, [roomId, realtimeEnabled]);
 
   useEffect(() => {
-    if (status === "ended" || status === "declined") return;
+    if (endedRef.current || status === "ended" || status === "declined") return;
     const timer = window.setInterval(() => {
+      if (endedRef.current) return;
       void syncCallStatus();
     }, 8_000);
     return () => window.clearInterval(timer);
@@ -177,6 +187,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       if (startAfterAcceptRef.current && !startedRef.current) void startCall();
     });
     const declinedChannel = subscribeBroadcast<{ roomId: string }>(`video-call-${roomId}`, "call-declined", () => {
+      endedRef.current = true;
       clearRingingTimeout();
       setStatus("declined");
       setNotice("Дуудлагаас татгалзсан байна.");
@@ -185,6 +196,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       window.setTimeout(() => router.replace("/chat"), 700);
     });
     const endedChannel = subscribeBroadcast<{ roomId: string }>(`video-call-${roomId}`, "call-ended", () => {
+      endedRef.current = true;
       clearRingingTimeout();
       cleanup(true);
       setNotice("Дуудлага дууссан байна.");
@@ -256,6 +268,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }, [messages.length, chatOpen]);
 
   useEffect(() => () => {
+    endedRef.current = true;
+    signalAbortRef.current?.abort();
+    if (iceFlushTimerRef.current) window.clearTimeout(iceFlushTimerRef.current);
     clearRingingTimeout();
     cleanup(false);
   }, []);
@@ -352,8 +367,12 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }
 
   async function loadSignals() {
+    if (endedRef.current) return;
+    signalAbortRef.current?.abort();
+    const controller = new AbortController();
+    signalAbortRef.current = controller;
     try {
-      const response = await api.get(`/video-calls/${roomId}/signal`, { params: { since: lastSignalAtRef.current } });
+      const response = await api.get(`/video-calls/${roomId}/signal`, { params: { since: lastSignalAtRef.current }, signal: controller.signal });
       const rows = response.data.data as SignalMessage[];
       for (const signal of rows) {
         if (signal.createdAt && signal.createdAt > lastSignalAtRef.current) lastSignalAtRef.current = signal.createdAt;
@@ -392,16 +411,19 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }
 
   async function syncCallStatus() {
+    if (endedRef.current) return;
     try {
       const response = await api.get(`/video-calls/${roomId}`);
       const next = response.data.data as VideoMeta;
       if (next.status === "ended") {
+        endedRef.current = true;
         clearRingingTimeout();
         cleanup(true);
         setNotice("Дуудлага дууссан байна.");
         window.setTimeout(() => router.replace("/chat"), 500);
       }
       if (next.status === "declined") {
+        endedRef.current = true;
         clearRingingTimeout();
         setStatus("declined");
         setNotice("Дуудлагаас татгалзсан байна.");
@@ -449,7 +471,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       }
     };
     peer.onicecandidate = (event) => {
-      if (event.candidate) void sendSignal("ice", event.candidate.toJSON());
+      if (event.candidate) queueIceCandidate(event.candidate.toJSON());
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "connected") {
@@ -462,8 +484,12 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }
 
   async function sendSignal(type: SignalMessage["type"], payload: SignalMessage["payload"]) {
+    if (endedRef.current) return;
+    const payloadKey = `${type}:${JSON.stringify(payload)}`;
+    if (sentSignalKeysRef.current.has(payloadKey)) return;
+    sentSignalKeysRef.current.add(payloadKey);
     const eventName = type === "ice" ? "ice-candidate" : type;
-    await api.post(`/video-calls/${roomId}/signal`, { type, payload }).catch(() => null);
+    if (!realtimeEnabled) await api.post(`/video-calls/${roomId}/signal`, { type, payload }).catch(() => null);
     void broadcastRealtime(`video-call-${roomId}`, eventName, {
       id: crypto.randomUUID(),
       type,
@@ -471,6 +497,20 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       senderId: user?.id,
       createdAt: new Date().toISOString(),
     });
+  }
+
+  function queueIceCandidate(candidate: RTCIceCandidateInit) {
+    if (endedRef.current) return;
+    const key = `ice:${JSON.stringify(candidate)}`;
+    if (sentSignalKeysRef.current.has(key)) return;
+    iceQueueRef.current.push(candidate);
+    if (iceFlushTimerRef.current) return;
+    iceFlushTimerRef.current = window.setTimeout(() => {
+      iceFlushTimerRef.current = null;
+      const candidates = [...iceQueueRef.current];
+      iceQueueRef.current = [];
+      for (const item of candidates) void sendSignal("ice", item);
+    }, 120);
   }
 
   async function tuneOutboundMedia(peer: RTCPeerConnection) {
@@ -586,12 +626,16 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }
 
   async function endCall() {
+    if (isEndingRef.current || endedRef.current) return;
+    isEndingRef.current = true;
+    endedRef.current = true;
     clearRingingTimeout();
     const endedAt = new Date();
-    const response = await api.patch("/video-calls", { roomId, status: "ended" }).catch(() => null);
-    const updated = response?.data?.data as VideoMeta | undefined;
-    const startedAt = updated?.startedAt || meta?.startedAt;
-    await recordCallEndedMessage({
+    signalAbortRef.current?.abort();
+    if (iceFlushTimerRef.current) window.clearTimeout(iceFlushTimerRef.current);
+    const startedAt = meta?.startedAt;
+    void api.patch("/video-calls", { roomId, status: "ended" }).catch(() => null);
+    void recordCallEndedMessage({
       endedAt,
       durationSeconds: startedAt ? Math.max(1, Math.round((endedAt.getTime() - new Date(startedAt).getTime()) / 1000)) : undefined,
     });

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const user = getAuthUser(request);
     const { roomId } = await params;
-    const limit = Number(request.nextUrl.searchParams.get("limit") || 80);
+    const limit = Number(request.nextUrl.searchParams.get("limit") || 50);
     const since = request.nextUrl.searchParams.get("since") || undefined;
     return ok(await chatService.messages(user.userId, roomId, { limit, since }));
   } catch (error) {
