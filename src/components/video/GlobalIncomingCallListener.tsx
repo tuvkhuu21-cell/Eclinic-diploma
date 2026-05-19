@@ -143,7 +143,7 @@ export function GlobalIncomingCallListener() {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     setIncoming(null);
     await api.patch("/video-calls", { roomId, status: "active" }).catch(() => null);
-    await broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId });
+    void broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId });
     router.push(`/video-call/${roomId}?accept=1`);
   }
 
@@ -155,7 +155,7 @@ export function GlobalIncomingCallListener() {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     setIncoming(null);
     await api.patch("/video-calls", { roomId, status: "declined" }).catch(() => null);
-    await broadcastRealtime(`video-call-${roomId}`, "call-declined", { roomId, userId });
+    void broadcastRealtime(`video-call-${roomId}`, "call-declined", { roomId, userId });
   }
 
   async function expireIncomingCall(roomId: string) {

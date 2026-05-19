@@ -142,7 +142,7 @@ export function ChatBox() {
     });
     const timer = window.setInterval(() => {
       void refreshMessages(activeRoomId);
-    }, 10_000);
+    }, 3_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -204,7 +204,7 @@ export function ChatBox() {
       const saved = response.data.data as ChatMessage;
       if (saved.createdAt && saved.createdAt > latestMessageAtRef.current) latestMessageAtRef.current = saved.createdAt;
       setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
-      await broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
     } catch {
       setMessages((current) => current.map((message) => message.id === tempId ? { ...message, status: "failed" } : message));
     } finally {
@@ -236,7 +236,7 @@ export function ChatBox() {
       if (saved.createdAt && saved.createdAt > latestMessageAtRef.current) latestMessageAtRef.current = saved.createdAt;
       setMessages((current) => mergeMessages(current.filter((message) => message.id !== tempId), [saved]));
       setDraft("");
-      await broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
     } catch {
       setMessages((current) => current.map((message) => message.status === "sending" ? { ...message, status: "failed" } : message));
     } finally {
@@ -270,7 +270,7 @@ export function ChatBox() {
     const roomId = response.data.data.roomId as string;
     const recipientUserId = user?.role === "DOCTOR" ? activeRoom.patient.user.id : activeRoom.doctor.user.id;
     if (recipientUserId) {
-      await broadcastRealtime(`user-notifications-${recipientUserId}`, "incoming-video-call", {
+      void broadcastRealtime(`user-notifications-${recipientUserId}`, "incoming-video-call", {
         roomId,
         appointmentId: activeRoom.appointment.id,
         callerId: user?.id,
@@ -280,7 +280,7 @@ export function ChatBox() {
       });
     }
     await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
-    await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+    void broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
       roomId,
       appointmentId: activeRoom.appointment.id,
       callerId: user?.id,

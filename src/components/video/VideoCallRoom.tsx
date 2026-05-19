@@ -30,7 +30,7 @@ type VideoMeta = {
   chatRoom?: { id: string } | null;
 };
 
-type ChatMessage = { id: string; content: string; senderId: string };
+type ChatMessage = { id: string; content: string; senderId: string; createdAt?: string };
 type VideoChatMessage = ChatMessage & { createdAt?: string; status?: "sending" | "failed" };
 
 function getIceServers(): RTCIceServer[] {
@@ -79,6 +79,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const initialChatLoadedRef = useRef(false);
+  const latestVideoChatAtRef = useRef("");
   const [meta, setMeta] = useState<VideoMeta | null>(null);
   const [messages, setMessages] = useState<VideoChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -207,18 +208,35 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
         const response = await api.get(`/chat/rooms/${chatRoomId}/messages`, { params: { limit: 80 } });
         if (!cancelled) {
           initialChatLoadedRef.current = false;
-          setMessages(sortMessages(response.data.data as VideoChatMessage[]));
+          const rows = sortMessages(response.data.data as VideoChatMessage[]);
+          latestVideoChatAtRef.current = rows.at(-1)?.createdAt || "";
+          setMessages(rows);
         }
       } catch {
         if (!cancelled) setMessages([]);
       }
     }
+    async function refreshMessages() {
+      try {
+        const params = latestVideoChatAtRef.current ? { since: latestVideoChatAtRef.current, limit: 40 } : { limit: 80 };
+        const response = await api.get(`/chat/rooms/${chatRoomId}/messages`, { params });
+        if (cancelled) return;
+        const rows = sortMessages(response.data.data as VideoChatMessage[]);
+        if (rows.at(-1)?.createdAt) latestVideoChatAtRef.current = rows.at(-1)?.createdAt || latestVideoChatAtRef.current;
+        setMessages((current) => rows.reduce((next, row) => upsertMessages(next, row), current));
+      } catch {
+        // Realtime is primary; polling is only a quiet fallback while the video room is open.
+      }
+    }
     loadMessages();
     const channel = subscribeBroadcast<ChatMessage>(`chat-room-${chatRoomId}`, "new-message", (message) => {
+      if (message.createdAt && message.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = message.createdAt;
       setMessages((current) => upsertMessages(current, message));
     });
+    const timer = window.setInterval(refreshMessages, 3_000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       removeRealtimeChannel(channel);
     };
   }, [meta?.chatRoom?.id]);
@@ -280,7 +298,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     try {
       await ensureLocalStream(peerRef.current || createPeer());
       await api.patch("/video-calls", { roomId, status: "active" });
-      await broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId: user?.id });
+      void broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId: user?.id });
       setStatus("active");
       setNotice("Дуудлагад нэгдлээ. Холболт хүлээж байна...");
     } catch (error) {
@@ -438,7 +456,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   async function sendSignal(type: SignalMessage["type"], payload: SignalMessage["payload"]) {
     const eventName = type === "ice" ? "ice-candidate" : type;
     await api.post(`/video-calls/${roomId}/signal`, { type, payload }).catch(() => null);
-    await broadcastRealtime(`video-call-${roomId}`, eventName, {
+    void broadcastRealtime(`video-call-${roomId}`, eventName, {
       id: crypto.randomUUID(),
       type,
       payload,
@@ -569,7 +587,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       endedAt,
       durationSeconds: startedAt ? Math.max(1, Math.round((endedAt.getTime() - new Date(startedAt).getTime()) / 1000)) : undefined,
     });
-    await broadcastRealtime(`video-call-${roomId}`, "call-ended", { roomId, userId: user?.id });
+    void broadcastRealtime(`video-call-${roomId}`, "call-ended", { roomId, userId: user?.id });
     cleanup(true);
     router.replace("/chat");
   }
@@ -586,8 +604,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     try {
       const response = await api.post("/chat/messages", { roomId: meta.chatRoom.id, content });
       const saved = response.data.data as ChatMessage;
+      if (saved.createdAt && saved.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = saved.createdAt;
       setMessages((current) => [...current.filter((item) => item.id !== saved.id), saved]);
-      await broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
     } catch {
       // Ending the call should never be blocked by chat history persistence.
     }
@@ -604,8 +623,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     try {
       const response = await api.post("/chat/messages", { roomId: meta.chatRoom.id, content });
       const saved = response.data.data as ChatMessage;
+      if (saved.createdAt && saved.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = saved.createdAt;
       setMessages((current) => upsertMessages(current.filter((item) => item.id !== tempId), saved));
-      await broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
     } catch {
       setMessages((current) => current.map((item) => item.id === tempId ? { ...item, status: "failed" } : item));
     }
@@ -627,8 +647,9 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     try {
       const response = await api.post("/chat/messages", { roomId: meta.chatRoom.id, content });
       const saved = response.data.data as ChatMessage;
+      if (saved.createdAt && saved.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = saved.createdAt;
       setMessages((current) => upsertMessages(current.filter((item) => item.id !== tempId), saved));
-      await broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
       setDraft("");
     } catch {
       setMessages((current) => current.map((item) => item.id === tempId ? { ...item, status: "failed" } : item));
@@ -686,7 +707,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       // If the status check fails, keep the old timeout behavior.
     }
     await api.patch("/video-calls", { roomId, status: "ended" }).catch(() => null);
-    await broadcastRealtime(`video-call-${roomId}`, "call-ended", { roomId, userId: user?.id });
+    void broadcastRealtime(`video-call-${roomId}`, "call-ended", { roomId, userId: user?.id });
     cleanup(true);
     setNotice("Дуудлага хариу өгөөгүй тул дууслаа.");
     router.replace("/chat");

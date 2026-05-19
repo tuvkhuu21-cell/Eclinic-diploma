@@ -47,14 +47,14 @@ export function DoctorAppointmentList() {
     await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
     const patientUserId = appointment.patient.user.id;
     if (patientUserId) {
-      await broadcastRealtime(`user-notifications-${patientUserId}`, "incoming-video-call", {
+      void broadcastRealtime(`user-notifications-${patientUserId}`, "incoming-video-call", {
         roomId,
         appointmentId: appointment.id,
         callerId: user?.id,
         callerName: `Dr. ${user?.lastName || ""} ${user?.firstName || ""}`.trim(),
       });
     }
-    await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+    void broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
       roomId,
       appointmentId: appointment.id,
       callerId: user?.id,

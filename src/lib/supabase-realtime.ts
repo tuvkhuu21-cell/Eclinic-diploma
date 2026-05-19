@@ -3,6 +3,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 let browserClient: SupabaseClient | null = null;
 let missingEnvLogged = false;
 const missingEnvMessage = "Supabase environment variables are missing";
+const broadcastChannels = new Map<string, { channel: RealtimeChannel; ready: Promise<void> }>();
 
 function getBrowserSupabaseEnv() {
   const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -47,20 +48,10 @@ export function getSupabaseBrowserClient() {
 }
 
 export async function broadcastRealtime(channelName: string, event: string, payload: unknown) {
-  const client = getSupabaseBrowserClient();
-  if (!client) return;
-  const channel = client.channel(channelName, { config: { broadcast: { self: false } } });
-  await new Promise<void>((resolve) => {
-    const timeout = window.setTimeout(resolve, 1200);
-    channel.subscribe((status) => {
-      if (status !== "SUBSCRIBED") return;
-      window.clearTimeout(timeout);
-      void channel.send({ type: "broadcast", event, payload }).finally(resolve);
-    });
-  });
-  window.setTimeout(() => {
-    void client.removeChannel(channel);
-  }, 1000);
+  const entry = getBroadcastChannel(channelName);
+  if (!entry) return;
+  await entry.ready;
+  await entry.channel.send({ type: "broadcast", event, payload });
 }
 
 export function subscribeBroadcast<T>(
@@ -78,4 +69,24 @@ export function subscribeBroadcast<T>(
 export function removeRealtimeChannel(channel: RealtimeChannel | null) {
   const client = getSupabaseBrowserClient();
   if (client && channel) void client.removeChannel(channel);
+}
+
+function getBroadcastChannel(channelName: string) {
+  const client = getSupabaseBrowserClient();
+  if (!client) return null;
+  const existing = broadcastChannels.get(channelName);
+  if (existing) return existing;
+
+  const channel = client.channel(channelName, { config: { broadcast: { self: false } } });
+  const ready = new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(resolve, 800);
+    channel.subscribe((status) => {
+      if (status !== "SUBSCRIBED") return;
+      window.clearTimeout(timeout);
+      resolve();
+    });
+  });
+  const entry = { channel, ready };
+  broadcastChannels.set(channelName, entry);
+  return entry;
 }

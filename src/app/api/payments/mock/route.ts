@@ -142,10 +142,10 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    await Promise.all([
-      broadcastRealtimeServer(`user-notifications-${user.userId}`, "new-notification", result.notifications.patient),
-      result.notifications.doctor ? broadcastRealtimeServer(`user-notifications-${result.notifications.doctor.userId}`, "new-notification", result.notifications.doctor) : Promise.resolve(),
-    ]).catch(() => null);
+    void broadcastRealtimeServer(`user-notifications-${user.userId}`, "new-notification", result.notifications.patient).catch(() => null);
+    if (result.notifications.doctor) {
+      void broadcastRealtimeServer(`user-notifications-${result.notifications.doctor.userId}`, "new-notification", result.notifications.doctor).catch(() => null);
+    }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {

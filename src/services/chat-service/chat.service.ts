@@ -105,7 +105,7 @@ export const chatService = {
           type: "CHAT",
         },
       });
-      await broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
+      void broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
     }
     return message;
   },

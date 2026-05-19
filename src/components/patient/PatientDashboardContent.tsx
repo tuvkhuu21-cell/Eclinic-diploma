@@ -366,14 +366,14 @@ async function startPatientVideoCall(appointment: PatientAppointment, user?: { i
   await api.patch("/video-calls", { roomId, status: "ringing" }).catch(() => null);
   const doctorUserId = appointment.doctor.user.id;
   if (doctorUserId) {
-    await broadcastRealtime(`user-notifications-${doctorUserId}`, "incoming-video-call", {
+    void broadcastRealtime(`user-notifications-${doctorUserId}`, "incoming-video-call", {
       roomId,
       appointmentId: appointment.id,
       callerId: user?.id,
       callerName: `${user?.lastName || ""} ${user?.firstName || "Үйлчлүүлэгч"}`.trim(),
     });
   }
-  await broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
+  void broadcastRealtime(`video-call-${roomId}`, "call-ringing", {
     roomId,
     appointmentId: appointment.id,
     callerId: user?.id,

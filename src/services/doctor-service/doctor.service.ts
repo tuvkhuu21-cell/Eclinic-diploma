@@ -112,7 +112,7 @@ export const doctorService = {
         include: { user: true, hospital: true },
       });
       if (input.online !== undefined) {
-        await broadcastRealtimeServer("doctor-status", "status-changed", {
+        void broadcastRealtimeServer("doctor-status", "status-changed", {
           doctorId: updated.id,
           userId,
           online: updated.online,
