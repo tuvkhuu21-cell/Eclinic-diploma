@@ -15,9 +15,10 @@ export async function POST(request: NextRequest) {
     const user = getAuthUser(request);
     const authedAt = Date.now();
     const input = validateBody(sendMessageSchema, await request.json());
+    const parsedAt = Date.now();
     const message = await chatService.send(user.userId, input);
     const totalMs = Date.now() - startedAt;
-    if (totalMs > 600) console.info("POST /api/chat/messages slow", { totalMs, authMs: authedAt - startedAt });
+    if (totalMs > 600) console.info("POST /api/chat/messages slow", { totalMs, authMs: authedAt - startedAt, parseMs: parsedAt - authedAt, serviceMs: Date.now() - parsedAt });
     return created(message);
   } catch (error) {
     if (error instanceof ApiError) return fail(error.message, error.statusCode);

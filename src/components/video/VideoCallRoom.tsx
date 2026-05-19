@@ -79,8 +79,11 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   const ringingTimeoutRef = useRef<number | null>(null);
   const sentSignalKeysRef = useRef<Set<string>>(new Set());
   const signalAbortRef = useRef<AbortController | null>(null);
+  const statusAbortRef = useRef<AbortController | null>(null);
+  const videoChatAbortRef = useRef<AbortController | null>(null);
   const iceQueueRef = useRef<RTCIceCandidateInit[]>([]);
   const iceFlushTimerRef = useRef<number | null>(null);
+  const pendingChatSendKeysRef = useRef<Set<string>>(new Set());
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
@@ -112,7 +115,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
           setNotice(next.status === "declined" ? "Дуудлагаас татгалзсан байна." : "Дуудлага дууссан байна.");
           cleanup(next.status === "ended");
           if (next.status === "declined") setStatus("declined");
-          window.setTimeout(() => router.replace("/chat"), 700);
+          router.replace("/chat");
         }
       } catch {
         if (!cancelled) setNotice("Видео өрөөний мэдээлэл олдсонгүй.");
@@ -193,14 +196,14 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
       setNotice("Дуудлагаас татгалзсан байна.");
       cleanup(false);
       setStatus("declined");
-      window.setTimeout(() => router.replace("/chat"), 700);
+      router.replace("/chat");
     });
     const endedChannel = subscribeBroadcast<{ roomId: string }>(`video-call-${roomId}`, "call-ended", () => {
       endedRef.current = true;
       clearRingingTimeout();
       cleanup(true);
       setNotice("Дуудлага дууссан байна.");
-      window.setTimeout(() => router.replace("/chat"), 700);
+      router.replace("/chat");
     });
     return () => {
       clearRingingTimeout();
@@ -219,7 +222,10 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     const chatRoomId = meta.chatRoom.id;
     async function loadMessages() {
       try {
-        const response = await api.get(`/chat/rooms/${chatRoomId}/messages`, { params: { limit: 80 } });
+        videoChatAbortRef.current?.abort();
+        const controller = new AbortController();
+        videoChatAbortRef.current = controller;
+        const response = await api.get(`/chat/rooms/${chatRoomId}/messages`, { params: { limit: 50 }, signal: controller.signal });
         if (!cancelled) {
           initialChatLoadedRef.current = false;
           const rows = sortMessages(response.data.data as VideoChatMessage[]);
@@ -232,7 +238,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     }
     async function refreshMessages() {
       try {
-        const params = latestVideoChatAtRef.current ? { since: latestVideoChatAtRef.current, limit: 40 } : { limit: 80 };
+        const params = latestVideoChatAtRef.current ? { since: latestVideoChatAtRef.current, limit: 30 } : { limit: 50 };
         const response = await api.get(`/chat/rooms/${chatRoomId}/messages`, { params });
         if (cancelled) return;
         const rows = sortMessages(response.data.data as VideoChatMessage[]);
@@ -250,6 +256,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     const timer = realtimeEnabled ? null : window.setInterval(refreshMessages, 15_000);
     return () => {
       cancelled = true;
+      videoChatAbortRef.current?.abort();
       if (timer) window.clearInterval(timer);
       removeRealtimeChannel(channel);
     };
@@ -270,6 +277,8 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   useEffect(() => () => {
     endedRef.current = true;
     signalAbortRef.current?.abort();
+    statusAbortRef.current?.abort();
+    videoChatAbortRef.current?.abort();
     if (iceFlushTimerRef.current) window.clearTimeout(iceFlushTimerRef.current);
     clearRingingTimeout();
     cleanup(false);
@@ -384,8 +393,12 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   }
 
   async function checkAcceptedAndStart() {
+    if (endedRef.current) return;
     try {
-      const response = await api.get(`/video-calls/${roomId}`);
+      statusAbortRef.current?.abort();
+      const controller = new AbortController();
+      statusAbortRef.current = controller;
+      const response = await api.get(`/video-calls/${roomId}`, { signal: controller.signal });
       const next = response.data.data as VideoMeta;
       if (next.status === "active") {
         clearRingingTimeout();
@@ -397,13 +410,14 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
         setNotice("Дуудлагаас татгалзсан байна.");
         cleanup(false);
         setStatus("declined");
-        window.setTimeout(() => router.replace("/chat"), 700);
+        router.replace("/chat");
       }
       if (next.status === "ended") {
+        endedRef.current = true;
         clearRingingTimeout();
         cleanup(true);
         setNotice("Дуудлага дууссан байна.");
-        window.setTimeout(() => router.replace("/chat"), 700);
+        router.replace("/chat");
       }
     } catch {
       // Keep waiting quietly.
@@ -413,14 +427,17 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
   async function syncCallStatus() {
     if (endedRef.current) return;
     try {
-      const response = await api.get(`/video-calls/${roomId}`);
+      statusAbortRef.current?.abort();
+      const controller = new AbortController();
+      statusAbortRef.current = controller;
+      const response = await api.get(`/video-calls/${roomId}`, { signal: controller.signal });
       const next = response.data.data as VideoMeta;
       if (next.status === "ended") {
         endedRef.current = true;
         clearRingingTimeout();
         cleanup(true);
         setNotice("Дуудлага дууссан байна.");
-        window.setTimeout(() => router.replace("/chat"), 500);
+        router.replace("/chat");
       }
       if (next.status === "declined") {
         endedRef.current = true;
@@ -429,7 +446,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
         setNotice("Дуудлагаас татгалзсан байна.");
         cleanup(false);
         setStatus("declined");
-        window.setTimeout(() => router.replace("/chat"), 500);
+        router.replace("/chat");
       }
     } catch {
       // Broadcast handles the fast path; polling is only a quiet safety net.
@@ -632,6 +649,8 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     clearRingingTimeout();
     const endedAt = new Date();
     signalAbortRef.current?.abort();
+    statusAbortRef.current?.abort();
+    videoChatAbortRef.current?.abort();
     if (iceFlushTimerRef.current) window.clearTimeout(iceFlushTimerRef.current);
     const startedAt = meta?.startedAt;
     void api.patch("/video-calls", { roomId, status: "ended" }).catch(() => null);
@@ -664,23 +683,29 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
     }
   }
 
-  async function sendMessage() {
+  function sendMessage() {
     const content = draft.trim();
     if (!content || !meta?.chatRoom?.id) return;
+    const chatRoomId = meta.chatRoom.id;
+    const sendKey = `${chatRoomId}:${content}`;
+    if (pendingChatSendKeysRef.current.has(sendKey)) return;
+    pendingChatSendKeysRef.current.add(sendKey);
     const tempId = `temp-${crypto.randomUUID()}`;
-    const optimistic: VideoChatMessage = { id: tempId, content, senderId: user?.id || "me", createdAt: new Date().toISOString(), status: "sending" };
+    const optimistic: VideoChatMessage = { id: tempId, content, senderId: user?.id || "me", createdAt: new Date().toISOString() };
     setDraft("");
     shouldStickToBottomRef.current = true;
     setMessages((current) => upsertMessages(current, optimistic));
-    try {
-      const response = await api.post("/chat/messages", { roomId: meta.chatRoom.id, content });
+    api.post("/chat/messages", { roomId: chatRoomId, content })
+      .then((response) => {
       const saved = response.data.data as ChatMessage;
       if (saved.createdAt && saved.createdAt > latestVideoChatAtRef.current) latestVideoChatAtRef.current = saved.createdAt;
       setMessages((current) => upsertMessages(current.filter((item) => item.id !== tempId), saved));
-      void broadcastRealtime(`chat-room-${meta.chatRoom.id}`, "new-message", saved);
-    } catch {
+      void broadcastRealtime(`chat-room-${chatRoomId}`, "new-message", saved);
+      })
+      .catch(() => {
       setMessages((current) => current.map((item) => item.id === tempId ? { ...item, status: "failed" } : item));
-    }
+      })
+      .finally(() => pendingChatSendKeysRef.current.delete(sendKey));
   }
 
   async function sendAttachment(event: ChangeEvent<HTMLInputElement>) {
@@ -833,7 +858,7 @@ export function VideoCallRoom({ roomId }: { roomId: string }) {
               <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-[#0084ff] hover:bg-blue-50" aria-label="Файл хавсаргах" onClick={() => fileInputRef.current?.click()}><Paperclip size={19} /></button>
               <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-[#0084ff] hover:bg-blue-50" aria-label="Зураг"><ImageIcon size={19} /></button>
               <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-[#f0f2f5] px-4">
-                <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-500" placeholder="Aa" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} />
+                <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-500" placeholder="Aa" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }} />
                 <Smile className="text-[#0084ff]" size={20} />
               </div>
               <button type="button" className="grid h-10 w-10 place-items-center rounded-full bg-[#0084ff] text-white hover:bg-blue-600" aria-label="Илгээх" onClick={sendMessage}><Send size={17} /></button>

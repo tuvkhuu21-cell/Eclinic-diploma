@@ -63,7 +63,7 @@ export default function DoctorRegisterPage() {
       setAlert({ type: "success", text: "Эмчийн бүртгэл амжилттай үүслээ" });
       window.setTimeout(() => {
         router.replace("/dashboard/doctor");
-        router.refresh();
+
       }, 500);
     } catch (error) {
       const status = (error as AxiosError).response?.status;

@@ -58,7 +58,7 @@ export default function RegisterPage() {
       setAlert({ type: "success", text: "Амжилттай бүртгүүллээ" });
       window.setTimeout(() => {
         router.replace(dashboardByRole[user.role]);
-        router.refresh();
+
       }, 500);
     } catch (error) {
       const status = (error as AxiosError).response?.status;

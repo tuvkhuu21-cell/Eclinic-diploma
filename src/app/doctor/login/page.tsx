@@ -51,7 +51,7 @@ export default function DoctorLoginPage() {
       setAlert({ type: "success", text: "Амжилттай нэвтэрлээ" });
       window.setTimeout(() => {
         router.replace("/dashboard/doctor");
-        router.refresh();
+
       }, 400);
     } catch (error) {
       const status = (error as AxiosError).response?.status;

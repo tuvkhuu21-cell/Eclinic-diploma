@@ -59,7 +59,7 @@ export default function LoginPage() {
       setAlert({ type: "success", text: "Амжилттай нэвтэрлээ" });
       window.setTimeout(() => {
         router.replace(dashboardByRole[user.role]);
-        router.refresh();
+
       }, 500);
     } catch (error) {
       const status = (error as AxiosError).response?.status;

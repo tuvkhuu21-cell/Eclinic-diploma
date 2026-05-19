@@ -43,7 +43,6 @@ export function ChatBox() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [unreadRoomIds, setUnreadRoomIds] = useState<Set<string>>(new Set());
-  const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,7 +52,7 @@ export function ChatBox() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialScrollDoneRef = useRef(false);
   const latestMessageAtRef = useRef("");
-  const sendingRef = useRef(false);
+  const pendingSendKeysRef = useRef<Set<string>>(new Set());
   const activeMessageRequestRef = useRef<AbortController | null>(null);
   const realtimeEnabled = isSupabaseRealtimeEnabled();
 
@@ -209,17 +208,18 @@ export function ChatBox() {
     });
   }
 
-  async function sendMessage() {
+  function sendMessage() {
     const content = draft.trim();
-    if (!activeRoomId || !content || sendingRef.current) return;
-    sendingRef.current = true;
+    if (!activeRoomId || !content) return;
+    const sendKey = `${activeRoomId}:${content}`;
+    if (pendingSendKeysRef.current.has(sendKey)) return;
+    pendingSendKeysRef.current.add(sendKey);
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage: ChatMessage = {
       id: tempId,
       content,
       senderId: user?.id || "me",
       createdAt: new Date().toISOString(),
-      status: "sending",
     };
     setMessages((current) => {
       const merged = mergeMessages(current, [optimisticMessage]);
@@ -227,30 +227,31 @@ export function ChatBox() {
       return merged;
     });
     setDraft("");
-    setSending(true);
-    try {
-      const response = await api.post("/chat/messages", { roomId: activeRoomId, content });
+    const roomId = activeRoomId;
+    api.post("/chat/messages", { roomId, content })
+      .then((response) => {
       const saved = response.data.data as ChatMessage;
       if (saved.createdAt && saved.createdAt > latestMessageAtRef.current) latestMessageAtRef.current = saved.createdAt;
       setMessages((current) => {
         const merged = mergeMessages(current.filter((message) => message.id !== tempId), [saved]);
-        messageCache.set(activeRoomId, merged);
+        messageCache.set(roomId, merged);
         return merged;
       });
-      void broadcastRealtime(`chat-room-${activeRoomId}`, "new-message", saved);
+      void broadcastRealtime(`chat-room-${roomId}`, "new-message", saved);
       broadcastChatNotification(activeRoom);
-    } catch {
+      })
+      .catch(() => {
       setMessages((current) => current.map((message) => message.id === tempId ? { ...message, status: "failed" } : message));
-    } finally {
-      setSending(false);
-      sendingRef.current = false;
-    }
+      })
+      .finally(() => {
+        pendingSendKeysRef.current.delete(sendKey);
+      });
   }
 
   async function sendAttachment(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!activeRoomId || !file || sending || uploading) return;
+    if (!activeRoomId || !file || uploading) return;
     setUploading(true);
     try {
       const data = new FormData();
@@ -426,7 +427,7 @@ export function ChatBox() {
             <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={sendAttachment} />
             <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-medical hover:bg-cyanSoft" aria-label="Файл хавсаргах" disabled={!activeRoomId || uploading} onClick={() => fileInputRef.current?.click()}><Paperclip size={20} /></button>
             <div className="flex h-12 flex-1 items-center gap-2 rounded-full bg-[#f0f8f4] px-4 ring-1 ring-emerald-100">
-              <input ref={messageInputRef} className="min-w-0 flex-1 bg-transparent text-base font-medium text-slate-900 outline-none placeholder:text-slate-500" placeholder="Aa" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendMessage(); }} disabled={!activeRoomId} />
+              <input ref={messageInputRef} className="min-w-0 flex-1 bg-transparent text-base font-medium text-slate-900 outline-none placeholder:text-slate-500" placeholder="Aa" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); sendMessage(); } }} disabled={!activeRoomId} />
               <div ref={emojiRef} className="relative">
                 <button type="button" className="grid h-9 w-9 place-items-center rounded-full text-medical transition hover:bg-emerald-50 disabled:opacity-40" aria-label="Emoji" disabled={!activeRoomId} onClick={() => setEmojiOpen((open) => !open)}>
                   <Smile size={22} />
@@ -442,7 +443,7 @@ export function ChatBox() {
                 )}
               </div>
             </div>
-            <button type="button" className="grid h-10 w-10 place-items-center rounded-full bg-medical text-white transition hover:bg-[#1d6758]" aria-label="Илгээх" disabled={!activeRoomId || sending || uploading} onClick={sendMessage}><Send size={18} /></button>
+            <button type="button" className="grid h-10 w-10 place-items-center rounded-full bg-medical text-white transition hover:bg-[#1d6758]" aria-label="Илгээх" disabled={!activeRoomId || uploading} onClick={sendMessage}><Send size={18} /></button>
           </div>
         </main>
     </div>

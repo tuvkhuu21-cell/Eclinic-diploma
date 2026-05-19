@@ -90,18 +90,28 @@ export const chatService = {
       select: { patient: { select: { userId: true } }, doctor: { select: { userId: true } } },
     });
     if (!room) throw new ApiError(404, "Chat room not found");
-    const authorizedAt = Date.now();
+    const roomLookupAt = Date.now();
     const message = await prisma.message.create({
       data: { roomId: data.roomId, senderId: userId, content: data.content },
       select: { id: true, roomId: true, senderId: true, content: true, createdAt: true },
     });
-    const createdAt = Date.now();
+    const messageCreateAt = Date.now();
     const recipientUserId = room?.patient.userId === userId ? room.doctor.userId : room?.patient.userId;
     if (recipientUserId) {
-      void createChatNotification(recipientUserId);
+      setTimeout(() => {
+        void createChatNotification(recipientUserId);
+      }, 1);
     }
+    const notificationQueuedAt = Date.now();
     const totalMs = Date.now() - startedAt;
-    if (totalMs > 600) console.info("chatService.send slow", { totalMs, authMs: authorizedAt - startedAt, createMs: createdAt - authorizedAt });
+    if (totalMs > 600) {
+      console.info("chatService.send slow", {
+        totalMs,
+        roomLookupMs: roomLookupAt - startedAt,
+        messageCreateMs: messageCreateAt - roomLookupAt,
+        notificationQueueMs: notificationQueuedAt - messageCreateAt,
+      });
+    }
     return message;
   },
 };

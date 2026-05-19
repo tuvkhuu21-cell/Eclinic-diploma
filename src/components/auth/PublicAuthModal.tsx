@@ -57,7 +57,7 @@ export function PublicAuthModal({ mode, onClose, onModeChange }: { mode: Mode | 
       window.setTimeout(() => {
         onClose();
         router.replace(dashboardByRole[user.role]);
-        router.refresh();
+
       }, 400);
     } catch (error) {
       const status = (error as AxiosError).response?.status;
@@ -94,7 +94,7 @@ export function PublicAuthModal({ mode, onClose, onModeChange }: { mode: Mode | 
       window.setTimeout(() => {
         onClose();
         router.replace("/dashboard/patient?section=profile");
-        router.refresh();
+
       }, 450);
     } catch (error) {
       const status = (error as AxiosError).response?.status;

@@ -57,7 +57,7 @@ export function UserAvatarMenu({ user, role, buttonClassName }: { user?: AuthUse
     if (activeRole === "DOCTOR") await api.patch("/doctors/me", { online: false }).catch(() => null);
     logout();
     router.replace("/");
-    router.refresh();
+
   }
 
   return (

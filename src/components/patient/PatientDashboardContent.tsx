@@ -150,9 +150,15 @@ type PatientAppointment = {
   doctor: {
     id: string;
     specialty: string;
+    bio?: string | null;
+    experience?: number;
+    fee?: number;
+    gender?: string | null;
+    supportsOnline?: boolean;
+    supportsInPerson?: boolean;
     hospital?: { name: string } | null;
     chatRooms?: Array<{ id: string }>;
-    user: { id?: string; firstName: string; lastName?: string };
+    user: { id?: string; firstName: string; lastName?: string; email?: string; phone?: string | null };
   };
   videoCall?: { roomId: string; status?: string } | null;
 };
@@ -161,6 +167,7 @@ function MyDoctorsSection() {
   const user = useAuthStore((state) => state.user);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDoctor, setSelectedDoctor] = useState<PatientAppointment | null>(null);
 
   useEffect(() => {
     api.get("/appointments/my")
@@ -190,7 +197,7 @@ function MyDoctorsSection() {
           const isHospitalVisit = appointment.type === "HOSPITAL_VISIT";
           return (
             <article key={`${appointment.id}-${doctorName}`} className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
-              <div className="flex gap-4">
+              <button type="button" className="flex w-full gap-4 text-left" onClick={() => setSelectedDoctor(appointment)}>
                 <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-cyanSoft text-lg font-extrabold text-medical">{doctorName.slice(0, 2)}</div>
                 <div className="min-w-0 flex-1">
                   <h3 className="font-bold text-navy">{doctorName}</h3>
@@ -199,7 +206,7 @@ function MyDoctorsSection() {
                   <p className="mt-2 text-xs font-semibold text-slate-500">Сүүлийн цаг: {formatDateTime(appointment.scheduledAt)}{appointment.room ? ` · Өрөө ${appointment.room}` : ""}</p>
                   {isHospitalVisit && <span className="mt-2 inline-flex rounded-full bg-cyanSoft px-3 py-1 text-xs font-bold text-medical">Биечлэн</span>}
                 </div>
-              </div>
+              </button>
               <div className="mt-4 flex flex-wrap gap-2">
                 {!isHospitalVisit && chatRoomId ? (
                   <Link href={`/chat?roomId=${chatRoomId}`} className="inline-flex items-center gap-2 rounded-full bg-medical px-4 py-2 text-sm font-bold text-white transition hover:bg-sky-600">
@@ -220,7 +227,54 @@ function MyDoctorsSection() {
         })}
         {doctors.length === 0 && <EmptyState text="Төлбөр төлөгдсөн цагийн эмч одоогоор алга." />}
       </div>
+      <DoctorInfoModal appointment={selectedDoctor} onClose={() => setSelectedDoctor(null)} />
     </PanelShell>
+  );
+}
+
+function DoctorInfoModal({ appointment, onClose }: { appointment: PatientAppointment | null; onClose: () => void }) {
+  if (!appointment) return null;
+  const doctorName = formatDoctorName(appointment);
+  const doctor = appointment.doctor;
+  return (
+    <div className="fixed inset-0 z-[110] grid place-items-center bg-slate-900/45 px-4 py-6 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-[0_24px_80px_rgba(25,105,89,0.25)]" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-start gap-4 bg-gradient-to-br from-[#237b68] to-[#8fd8bf] p-6 text-white">
+          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-white text-lg font-black text-medical">{doctorName.slice(0, 2)}</div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl font-extrabold">{doctorName}</h2>
+            <p className="mt-1 text-sm font-semibold text-emerald-50">{doctor.specialty}</p>
+            <p className="mt-2 text-xs font-bold text-white/80">{doctor.hospital?.name || "Эмнэлэг сонгоогүй"}</p>
+          </div>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-full bg-white/15 transition hover:bg-white/25" onClick={onClose} aria-label="Close doctor info">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid gap-4 p-6 md:grid-cols-2">
+          <InfoCard label="Мэргэжил" value={doctor.specialty} />
+          <InfoCard label="Эмнэлэг" value={doctor.hospital?.name} />
+          <InfoCard label="Туршлага" value={typeof doctor.experience === "number" ? `${doctor.experience} жил` : ""} />
+          <InfoCard label="Хүйс" value={doctor.gender} />
+          <InfoCard label="Утас" value={doctor.user.phone} />
+          <InfoCard label="И-мэйл" value={doctor.user.email} />
+          <InfoCard label="Үйлчилгээ" value={[doctor.supportsOnline ? "Онлайн" : "", doctor.supportsInPerson ? "Биечлэн" : ""].filter(Boolean).join(" · ")} />
+          <InfoCard label="Үнэ" value={doctor.fee ? `${formatCurrency(doctor.fee)}₮` : "30,000₮"} />
+          <div className="rounded-2xl border border-emerald-100 bg-[#f8fcfa] p-4 md:col-span-2">
+            <p className="text-xs font-bold text-slate-400">Танилцуулга</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-navy">{doctor.bio || "Танилцуулга бүртгээгүй байна."}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoCard({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="rounded-2xl border border-emerald-100 bg-[#f8fcfa] p-4">
+      <p className="text-xs font-bold text-slate-400">{label}</p>
+      <p className="mt-1 font-semibold text-navy">{value || "Бүртгээгүй"}</p>
+    </div>
   );
 }
 

@@ -24,8 +24,10 @@ export function GlobalIncomingCallListener() {
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
   const [incoming, setIncoming] = useState<IncomingVideoCall | null>(null);
+  const [accepting, setAccepting] = useState(false);
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  const checkingRef = useRef(false);
   const ignoredRoomIdsRef = useRef<Set<string>>(new Set());
   const userId = user?.id ?? null;
   const enabled = Boolean(userId);
@@ -58,10 +60,12 @@ export function GlobalIncomingCallListener() {
   }, [enabled, userId, isVideoPage]);
 
   useEffect(() => {
-    if (!enabled || !userId || isVideoPage || incoming || realtimeEnabled) return;
+    if (!enabled || !userId || isVideoPage || incoming) return;
     let cancelled = false;
 
     async function checkIncomingCall() {
+      if (checkingRef.current || document.visibilityState !== "visible") return;
+      checkingRef.current = true;
       try {
         const response = await api.get("/video-calls", { params: { status: "ringing" } });
         if (cancelled) return;
@@ -76,11 +80,13 @@ export function GlobalIncomingCallListener() {
         });
       } catch {
         // Keep the fallback quiet during LAN/API hiccups.
+      } finally {
+        checkingRef.current = false;
       }
     }
 
     void checkIncomingCall();
-    const timer = window.setInterval(checkIncomingCall, 20_000);
+    const timer = window.setInterval(checkIncomingCall, realtimeEnabled ? 3_000 : 3_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -137,19 +143,21 @@ export function GlobalIncomingCallListener() {
   }, [stopRingtone]);
 
   async function acceptCall() {
-    if (!incoming) return;
+    if (!incoming || accepting) return;
+    setAccepting(true);
     const roomId = incoming.roomId;
     ignoredRoomIdsRef.current.add(roomId);
     stopRingtone();
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     setIncoming(null);
-    await api.patch("/video-calls", { roomId, status: "active" }).catch(() => null);
+    void api.patch("/video-calls", { roomId, status: "active" }).catch(() => null);
     void broadcastRealtime(`video-call-${roomId}`, "call-accepted", { roomId, userId });
     router.push(`/video-call/${roomId}?accept=1`);
   }
 
   async function declineCall() {
     if (!incoming) return;
+    setAccepting(false);
     const roomId = incoming.roomId;
     ignoredRoomIdsRef.current.add(roomId);
     stopRingtone();
@@ -192,8 +200,8 @@ export function GlobalIncomingCallListener() {
         <h2 className="mt-4 text-xl font-extrabold text-navy">Видео дуудлага ирлээ</h2>
         <p className="mt-2 text-sm font-semibold text-slate-600">{callerName}</p>
         <div className="mt-5 flex justify-center gap-3">
-          <button type="button" className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700" onClick={acceptCall}>
-            <Video size={16} /> Accept
+          <button type="button" className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60" onClick={acceptCall} disabled={accepting}>
+            <Video size={16} /> {accepting ? "Opening..." : "Accept"}
           </button>
           <button type="button" className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-5 py-3 text-sm font-bold text-white hover:bg-rose-700" onClick={declineCall}>
             <PhoneOff size={16} /> Decline
