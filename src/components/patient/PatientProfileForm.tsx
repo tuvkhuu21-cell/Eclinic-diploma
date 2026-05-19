@@ -40,8 +40,12 @@ export function PatientProfileForm() {
   async function save() {
     setSaving(true); setAlert(null);
     try {
-      await api.put("/patient/profile", { ...form, bmi: calculatedBmi || form.bmi });
-      await loadProfile();
+      const res = await api.put("/patient/profile", { ...form, bmi: calculatedBmi || form.bmi });
+      const data = unwrap<Record<string, any>>(res);
+      setForm({
+        lastName: data.user?.lastName || "", firstName: data.user?.firstName || "", phone: data.user?.phone || "", email: data.user?.email || "",
+        registerNo: data.registerNo || "", gender: data.gender || "", dateOfBirth: toInputDate(data.dateOfBirth), bloodType: data.bloodType || "", maritalStatus: data.maritalStatus || "", heightCm: data.heightCm?.toString() || "", weightKg: data.weightKg?.toString() || "", bmi: data.bmi?.toString() || "", city: data.city || "", district: data.district || "", khoroo: data.khoroo || "", addressDetail: data.addressDetail || "", emergencyRelation: data.emergencyRelation || "", emergencyName: data.emergencyName || "", emergencyPhone: data.emergencyPhone || "",
+      });
       setAlert({ type: "success", text: "Амжилттай хадгаллаа" });
     } catch {
       setAlert({ type: "error", text: "Хадгалах үед алдаа гарлаа" });

@@ -7,11 +7,44 @@ import type { patientHealthSchema, patientProfileSchema } from "./patient.schema
 type ProfileInput = z.infer<typeof patientProfileSchema>;
 type HealthInput = z.infer<typeof patientHealthSchema>;
 
-const profileInclude = { user: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } } };
+const profileSelect = {
+  id: true,
+  userId: true,
+  registerNo: true,
+  gender: true,
+  dateOfBirth: true,
+  bloodType: true,
+  maritalStatus: true,
+  heightCm: true,
+  weightKg: true,
+  bmi: true,
+  city: true,
+  district: true,
+  khoroo: true,
+  addressDetail: true,
+  emergencyRelation: true,
+  emergencyName: true,
+  emergencyPhone: true,
+  hasAllergy: true,
+  allergyNote: true,
+  hasChronicDisease: true,
+  chronicDiseaseNote: true,
+  hasRegularMedicine: true,
+  regularMedicineNote: true,
+  hasInjury: true,
+  injuryNote: true,
+  hasSurgery: true,
+  surgeryNote: true,
+  smoking: true,
+  alcohol: true,
+  movement: true,
+  food: true,
+  user: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } },
+};
 
 async function resolvePatient(userId: string, role: AuthRole, query: URLSearchParams) {
   if (role === "PATIENT") {
-    const profile = await prisma.patientProfile.findUnique({ where: { userId }, include: profileInclude });
+    const profile = await prisma.patientProfile.findUnique({ where: { userId }, select: profileSelect });
     if (!profile) throw new ApiError(404, "Patient profile not found");
     return profile;
   }
@@ -21,19 +54,19 @@ async function resolvePatient(userId: string, role: AuthRole, query: URLSearchPa
   const roomId = query.get("roomId");
 
   if (patientId) {
-    const profile = await prisma.patientProfile.findUnique({ where: { id: patientId }, include: profileInclude });
+    const profile = await prisma.patientProfile.findUnique({ where: { id: patientId }, select: profileSelect });
     if (!profile) throw new ApiError(404, "Patient profile not found");
     return profile;
   }
 
   if (email) {
-    const profile = await prisma.patientProfile.findFirst({ where: { user: { email } }, include: profileInclude });
+    const profile = await prisma.patientProfile.findFirst({ where: { user: { email } }, select: profileSelect });
     if (!profile) throw new ApiError(404, "Patient profile not found");
     return profile;
   }
 
   if (roomId) {
-    const room = await prisma.chatRoom.findUnique({ where: { id: roomId }, include: { patient: { include: profileInclude } } });
+    const room = await prisma.chatRoom.findUnique({ where: { id: roomId }, select: { patient: { select: profileSelect } } });
     if (!room) throw new ApiError(404, "Chat room not found");
     return room.patient;
   }
@@ -78,7 +111,7 @@ export const patientService = {
           emergencyName: input.emergencyName,
           emergencyPhone: input.emergencyPhone,
         },
-        include: profileInclude,
+        select: profileSelect,
       });
     });
   },
@@ -91,8 +124,7 @@ export const patientService = {
     return prisma.patientProfile.update({
       where: { userId },
       data: input,
-      include: profileInclude,
+      select: profileSelect,
     });
   },
 };
-

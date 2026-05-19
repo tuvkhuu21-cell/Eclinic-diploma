@@ -26,7 +26,7 @@ export function PatientLifestyleForm() {
     const response = await api.get("/patient/health");
     setForm(unwrap<HealthFormState>(response));
   }
-  async function save() { setSaving(true); setAlert(null); try { await api.put("/patient/health", form); await loadLifestyle(); setAlert({ type: "success", text: "Амжилттай хадгаллаа" }); } catch { setAlert({ type: "error", text: "Хадгалах үед алдаа гарлаа" }); } finally { setSaving(false); } }
+  async function save() { setSaving(true); setAlert(null); try { const response = await api.put("/patient/health", form); setForm(unwrap<HealthFormState>(response)); setAlert({ type: "success", text: "Амжилттай хадгаллаа" }); } catch { setAlert({ type: "error", text: "Хадгалах үед алдаа гарлаа" }); } finally { setSaving(false); } }
   return (
     <div>
       <Card className="p-6">
