@@ -48,7 +48,26 @@ export const doctorService = {
       orderBy: { user: { createdAt: "desc" } },
       take: 80,
     }),
-  detail: (id: string) => prisma.doctorProfile.findUnique({ where: { id }, include: { user: true, hospital: true, departments: true, _count: { select: { appointments: true, consultations: true } } } }),
+  detail: (id: string) => prisma.doctorProfile.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      specialty: true,
+      bio: true,
+      experience: true,
+      fee: true,
+      rating: true,
+      gender: true,
+      online: true,
+      supportsOnline: true,
+      supportsInPerson: true,
+      verified: true,
+      user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      hospital: { select: { id: true, name: true, address: true, phone: true } },
+      departments: { select: { id: true, name: true } },
+      _count: { select: { appointments: true, consultations: true } },
+    },
+  }),
   async register(input: DoctorRegisterInput) {
     const exists = await prisma.user.findUnique({ where: { email: input.email } });
     if (exists) throw new ApiError(409, "Email already registered");
@@ -80,7 +99,24 @@ export const doctorService = {
     });
     return authPayload(user);
   },
-  me: (userId: string) => prisma.doctorProfile.findUnique({ where: { userId }, include: { user: true, hospital: true } }),
+  me: (userId: string) => prisma.doctorProfile.findUnique({
+    where: { userId },
+    select: {
+      id: true,
+      specialty: true,
+      bio: true,
+      experience: true,
+      fee: true,
+      rating: true,
+      gender: true,
+      online: true,
+      supportsOnline: true,
+      supportsInPerson: true,
+      verified: true,
+      user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      hospital: { select: { id: true, name: true, address: true, phone: true } },
+    },
+  }),
   async updateMe(userId: string, input: DoctorProfileUpdateInput) {
     const doctor = await prisma.doctorProfile.findUnique({ where: { userId } });
     if (!doctor) throw new ApiError(404, "Doctor profile not found");

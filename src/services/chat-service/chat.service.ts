@@ -97,16 +97,25 @@ export const chatService = {
     });
     const recipientUserId = room?.patient.userId === userId ? room.doctor.userId : room?.patient.userId;
     if (recipientUserId) {
-      const notification = await prisma.notification.create({
-        data: {
-          userId: recipientUserId,
-          title: "Шинэ чат зурвас",
-          body: "Танд шинэ чат зурвас ирлээ.",
-          type: "CHAT",
-        },
-      });
-      void broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
+      void createChatNotification(recipientUserId);
     }
     return message;
   },
 };
+
+async function createChatNotification(recipientUserId: string) {
+  try {
+    const notification = await prisma.notification.create({
+      data: {
+        userId: recipientUserId,
+        title: "Шинэ чат зурвас",
+        body: "Танд шинэ чат зурвас ирлээ.",
+        type: "CHAT",
+      },
+      select: { id: true, title: true, body: true, type: true, readAt: true, createdAt: true },
+    });
+    void broadcastRealtimeServer(`user-notifications-${recipientUserId}`, "new-notification", notification).catch(() => null);
+  } catch (error) {
+    console.error("create chat notification failed", error);
+  }
+}

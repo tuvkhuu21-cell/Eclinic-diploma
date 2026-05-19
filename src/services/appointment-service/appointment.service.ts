@@ -4,46 +4,101 @@ import { ApiError } from "@/lib/errors";
 const DEFAULT_ONLINE_PRICE = 30000;
 
 export const appointmentService = {
-  list: (userId: string) => prisma.appointment.findMany({ where: { OR: [{ patient: { userId } }, { doctor: { userId } }] }, include: { doctor: { include: { user: true } }, patient: { include: { user: true } }, hospital: true }, orderBy: { scheduledAt: "asc" } }),
+  list: (userId: string) => prisma.appointment.findMany({
+    where: { OR: [{ patient: { userId } }, { doctor: { userId } }] },
+    select: {
+      id: true,
+      scheduledAt: true,
+      durationMinutes: true,
+      type: true,
+      price: true,
+      paymentStatus: true,
+      reason: true,
+      status: true,
+      doctor: { select: { id: true, specialty: true, user: { select: { id: true, firstName: true, lastName: true } } } },
+      patient: { select: { id: true, user: { select: { id: true, firstName: true, lastName: true } } } },
+      hospital: { select: { id: true, name: true } },
+    },
+    orderBy: { scheduledAt: "asc" },
+    take: 100,
+  }),
   async my(userId: string) {
-    const patient = await prisma.patientProfile.findUnique({ where: { userId } });
-    if (!patient) return [];
-    const rows = await prisma.$queryRaw<Array<{ id: string; patientId: string; doctorId: string; hospitalId: string | null; scheduledAt: Date; reason: string; status: string; createdAt: Date }>>`
-      SELECT "id", "patientId", "doctorId", "hospitalId", "scheduledAt", "reason", "status", "createdAt"
-      FROM "Appointment"
-      WHERE "patientId" = ${patient.id}
-      ORDER BY "scheduledAt" ASC
-    `;
-    const appointments = await Promise.all(rows.map(async (appointment) => {
-      const [doctor, chatRoom, videoCall] = await Promise.all([
-        prisma.doctorProfile.findUnique({ where: { id: appointment.doctorId }, include: { user: true, hospital: true } }),
-        prisma.chatRoom.findFirst({ where: { patientId: patient.id, doctorId: appointment.doctorId }, select: { id: true } }),
-        prisma.videoCall.findUnique({ where: { appointmentId: appointment.id }, select: { roomId: true, status: true } }).catch(() => null),
-      ]);
-      if (!doctor) return null;
-      const appointmentType = appointment.reason?.includes("Багц шинжилгээ")
+    const appointments = await prisma.appointment.findMany({
+      where: { patient: { userId } },
+      select: {
+        id: true,
+        patientId: true,
+        doctorId: true,
+        hospitalId: true,
+        scheduledAt: true,
+        durationMinutes: true,
+        type: true,
+        price: true,
+        paymentStatus: true,
+        reason: true,
+        status: true,
+        createdAt: true,
+        doctor: {
+          select: {
+            id: true,
+            specialty: true,
+            fee: true,
+            hospital: { select: { id: true, name: true, address: true, phone: true } },
+            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            chatRooms: { where: { patient: { userId } }, select: { id: true }, take: 1 },
+          },
+        },
+        hospital: { select: { id: true, name: true, address: true, phone: true } },
+        videoCall: { select: { roomId: true, status: true } },
+      },
+      orderBy: { scheduledAt: "asc" },
+      take: 100,
+    });
+    return appointments.map((appointment) => {
+      const appointmentType = appointment.type || (appointment.reason?.includes("Багц шинжилгээ")
         ? "PACKAGE_ORDER"
         : appointment.reason?.includes("Биечлэн")
           ? "HOSPITAL_VISIT"
-          : "ONLINE";
+          : "ONLINE");
       return {
         ...appointment,
-        durationMinutes: 30,
+        durationMinutes: appointment.durationMinutes || 30,
         type: appointmentType,
-        price: doctor.fee > 0 ? doctor.fee : 30000,
-        paymentStatus: appointment.status === "CONFIRMED" || appointment.status === "COMPLETED" ? "PAID" : "PENDING",
+        price: appointment.price > 0 ? appointment.price : appointment.doctor.fee > 0 ? appointment.doctor.fee : 30000,
+        paymentStatus: appointment.paymentStatus || (appointment.status === "CONFIRMED" || appointment.status === "COMPLETED" ? "PAID" : "PENDING"),
         room: extractRoom(appointment.reason),
-        specialty: extractSpecialty(appointment.reason, doctor.specialty),
+        specialty: extractSpecialty(appointment.reason, appointment.doctor.specialty),
         packageName: extractPackageName(appointment.reason),
         labName: extractPackageLabName(appointment.reason),
-        doctor: { ...doctor, chatRooms: chatRoom ? [chatRoom] : [] },
-        videoCall,
-        hospital: doctor?.hospital || null,
+        hospital: appointment.hospital || appointment.doctor.hospital || null,
       };
-    }));
-    return appointments.filter(Boolean);
+    });
   },
-  doctor: (userId: string) => prisma.appointment.findMany({ where: { doctor: { userId } }, include: { patient: { include: { user: true, chatRooms: { where: { doctor: { userId } }, select: { id: true } } } }, hospital: true, videoCall: true }, orderBy: { scheduledAt: "asc" } }),
+  doctor: (userId: string) => prisma.appointment.findMany({
+    where: { doctor: { userId } },
+    select: {
+      id: true,
+      doctorId: true,
+      scheduledAt: true,
+      durationMinutes: true,
+      type: true,
+      price: true,
+      paymentStatus: true,
+      reason: true,
+      status: true,
+      patient: {
+        select: {
+          id: true,
+          user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+          chatRooms: { where: { doctor: { userId } }, select: { id: true }, take: 1 },
+        },
+      },
+      hospital: { select: { id: true, name: true, address: true, phone: true } },
+      videoCall: { select: { roomId: true, status: true } },
+    },
+    orderBy: { scheduledAt: "asc" },
+    take: 100,
+  }),
   async create(userId: string, data: { doctorId: string; hospitalId?: string; scheduledAt: string; reason: string; durationMinutes?: number; type?: string; price?: number; paymentStatus?: string }) {
     const patient = await prisma.patientProfile.findUnique({ where: { userId } });
     if (!patient) throw new ApiError(403, "Patient profile required");

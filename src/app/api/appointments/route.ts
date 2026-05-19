@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
     const user = getAuthUser(request);
     return ok(await appointmentService.list(user.userId));
   } catch (error) {
+    if (error instanceof ApiError) return fail(error.message, error.statusCode);
+    console.error("GET /api/appointments failed", error);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }
@@ -26,7 +28,8 @@ export async function POST(request: NextRequest) {
     const input = validateBody(createAppointmentSchema, await request.json());
     return created(await appointmentService.create(user.userId, input));
   } catch (error) {
+    if (error instanceof ApiError) return fail(error.message, error.statusCode);
+    console.error("POST /api/appointments failed", error);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }
-

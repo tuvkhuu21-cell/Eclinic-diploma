@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     return ok(await hospitalService.list({ q: request.nextUrl.searchParams.get("q"), district: request.nextUrl.searchParams.get("district") }));
   } catch (error) {
+    console.error("GET /api/hospitals failed", error);
     return fail(errorMessage(error), 500);
   }
 }
-

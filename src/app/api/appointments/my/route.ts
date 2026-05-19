@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     return ok(await appointmentService.my(user.userId));
   } catch (error) {
     if (error instanceof ApiError && (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 404)) return ok([]);
+    console.error("GET /api/appointments/my failed", error);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }

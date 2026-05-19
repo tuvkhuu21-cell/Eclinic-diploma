@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
     requireRole(user, ["DOCTOR"]);
     return ok(await appointmentService.doctor(user.userId));
   } catch (error) {
+    if (error instanceof ApiError) return fail(error.message, error.statusCode);
+    console.error("GET /api/appointments/doctor failed", error);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }

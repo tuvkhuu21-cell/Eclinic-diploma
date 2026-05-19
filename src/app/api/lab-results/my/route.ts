@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
     if (!patient) throw new ApiError(403, "Patient profile required");
     const results = await prisma.labResult.findMany({
       where: { patientId: patient.id },
+      select: { id: true, code: true, title: true, resultJson: true, summary: true, issuedAt: true },
       orderBy: { issuedAt: "desc" },
+      take: 50,
     });
     return ok(results.map((result) => {
       const meta = normalizeMeta(result.resultJson);
@@ -36,6 +38,8 @@ export async function GET(request: NextRequest) {
       };
     }));
   } catch (error) {
+    if (error instanceof ApiError && (error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 404)) return ok([]);
+    console.error("GET /api/lab-results/my failed", error);
     return fail(errorMessage(error), error instanceof ApiError ? error.statusCode : 500);
   }
 }
